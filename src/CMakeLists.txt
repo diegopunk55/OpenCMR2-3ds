@@ -73,7 +73,13 @@ else()
     add_executable(opencmr2 platform/main.cpp)
 endif()
 target_link_libraries(opencmr2 PRIVATE opencmr2_platform)
-if(OPENCMR2_BUILT_SDL AND NOT NINTENDO_3DS)
+if(WIN32)
+    target_sources(opencmr2 PRIVATE ${PROJECT_SOURCE_DIR}/res/opencmr2.rc)
+    # SDL3.dll (and any other runtime DLL) next to the executable.
+    add_custom_command(TARGET opencmr2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:opencmr2> $<TARGET_FILE_DIR:opencmr2>
+        COMMAND_EXPAND_LISTS)
+elseif(OPENCMR2_BUILT_SDL AND NOT NINTENDO_3DS)
     # The SDL3 built here goes next to the executable, which looks for it
     # there, so the Linux build runs without SDL3 installed.
     set_property(TARGET opencmr2 APPEND PROPERTY BUILD_RPATH "$ORIGIN")
@@ -82,7 +88,7 @@ if(OPENCMR2_BUILT_SDL AND NOT NINTENDO_3DS)
 endif()
 
 if(NOT NINTENDO_3DS)
-# ---- shaders (GLSL -> SPIR-V, embedded; desktop SDL_GPU renderer only) ------------
+# ---- shaders (GLSL -> SPIR-V, embedded; desktop SDL_GPU renderer, Vulkan) ---------
 # Recent glslang releases use glslang.exe; older packages keep glslangValidator.
 find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslang REQUIRED)
 
@@ -131,6 +137,9 @@ add_custom_command(
 add_library(opencmr2_shortcut STATIC platform/menu_shortcut.cpp ${ICON_HEADER})
 target_include_directories(opencmr2_shortcut PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(opencmr2_shortcut PUBLIC SDL3::SDL3)
+if(WIN32)
+    target_link_libraries(opencmr2_shortcut PRIVATE ole32 uuid shell32)
+endif()
 target_link_libraries(opencmr2_platform PUBLIC opencmr2_shortcut)
 
 # ---- network (UDP with ENet, third_party/enet) -------------------------------------
@@ -139,7 +148,9 @@ add_library(enet STATIC
     ${ENET_DIR}/callbacks.c ${ENET_DIR}/compress.c ${ENET_DIR}/host.c ${ENET_DIR}/list.c
     ${ENET_DIR}/packet.c ${ENET_DIR}/peer.c ${ENET_DIR}/protocol.c ${ENET_DIR}/unix.c ${ENET_DIR}/win32.c)
 target_include_directories(enet PUBLIC ${ENET_DIR}/include)
-if(NINTENDO_3DS)
+if(WIN32)
+    target_link_libraries(enet PUBLIC ws2_32 winmm)
+elseif(NINTENDO_3DS)
     # libctru's sockets (soc:u): no sendmsg/recvmsg (unix.c gathers the
     # buffers itself there) and no msg_flags.
     target_compile_definitions(enet PRIVATE HAS_FCNTL=1 HAS_GETADDRINFO=1 HAS_GETNAMEINFO=1

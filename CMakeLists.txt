@@ -4,10 +4,10 @@ project(OpenCMR2 LANGUAGES C CXX)
 # Targets (see CMakePresets.json):
 #  - linux-x86: 32-bit x86, the reference build. The game's data structures
 #    have the original's layout there, which the golden tests compare against.
-#  - linux: native 64-bit host build. Raw access review and original-game
-#    parity checks are tracked in docs/64bit-raw-access.md.
-#  This fork targets the 3DS; the Linux presets stay as host builds for tests
-#  and for debugging game logic on a PC. Windows, macOS and Android were removed.
+#  - linux, windows-x64: native 64-bit builds. Raw access review and
+#    original-game parity checks are tracked in docs/64bit-raw-access.md.
+#  This fork targets the 3DS; the Linux and Windows presets stay as PC builds
+#  for tests and for debugging game logic. macOS and Android were removed.
 #  - 3ds: Nintendo 3DS with devkitARM (GCC) and citro3d, see docs/3DS.md. A
 #    32-bit target like linux-x86, so the game's structures keep their layout.
 
@@ -52,6 +52,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-fwrapv -fno-strict-aliasing -fsigned-char -ffp-contract=off)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86|i[3-6]86|AMD64")
     add_compile_options(-msse2 -mfpmath=sse)
+endif()
+if(WIN32)
+    # The MSVC runtime warns about its own POSIX names and "unsafe" functions.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS NOMINMAX)
 endif()
 
 if(OPENCMR2_SANITIZE)

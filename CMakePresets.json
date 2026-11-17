@@ -52,6 +52,20 @@
       }
     },
     {
+      "name": "windows-x64",
+      "inherits": "base",
+      "displayName": "Windows, x64 (clang++ from LLVM or Visual Studio, MSVC runtime)",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
       "name": "3ds",
       "displayName": "Nintendo 3DS (devkitARM, see docs/3DS.md)",
       "generator": "Ninja",
@@ -80,6 +94,10 @@
       "configurePreset": "linux-debug"
     },
     {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64"
+    },
+    {
       "name": "3ds",
       "configurePreset": "3ds"
     }
@@ -95,6 +113,13 @@
     {
       "name": "linux",
       "configurePreset": "linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
       "output": {
         "outputOnFailure": true
       }

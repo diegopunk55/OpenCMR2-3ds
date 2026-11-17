@@ -40,6 +40,40 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: glslang
+        shell: pwsh
+        run: |
+          curl.exe --fail --location --retry 3 --retry-delay 5 --output glslang.zip https://github.com/KhronosGroup/glslang/releases/download/main-tot/glslang-main-windows-x86_64-release.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive glslang.zip -DestinationPath glslang
+          & "$PWD\glslang\bin\glslang.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content $env:GITHUB_PATH "$PWD\glslang\bin"
+      # clang++ from Visual Studio's LLVM component; SDL3 is fetched.
+      - run: cmake --preset windows-x64 -DOPENCMR2_VENDORED_SDL=ON
+      - run: cmake --build --preset windows-x64
+      - run: ctest --preset windows-x64
+      - name: Package
+        shell: pwsh
+        run: |
+          python -m pip install pefile==2024.8.26
+          $crt = Join-Path $env:VCToolsRedistDir "x64/Microsoft.VC143.CRT"
+          python tools/package_release.py --binary build/windows-x64/src/opencmr2.exe `
+            --dll-dir $crt --license build/windows-x64/_deps/sdl3-src/LICENSE.txt `
+            --output dist/OpenCMR2-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenCMR2-Windows-x64
+          path: dist/*
+          if-no-files-found: error
+
   nintendo-3ds:
     runs-on: ubuntu-24.04
     container: devkitpro/devkitarm:latest
@@ -71,7 +105,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux-x86, nintendo-3ds]
+    needs: [linux-x86, windows, nintendo-3ds]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

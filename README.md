@@ -13,9 +13,9 @@ macOS and Android, and experimentally on the Nintendo 3DS. There is no emulation
 Direct3D 7, DirectSound, DirectInput, DirectPlay and Bink are replaced with
 SDL3, the SDL GPU API (Vulkan, Metal) and the port's own code.
 
-> **This fork targets the Nintendo 3DS only.** Windows, macOS and Android
-> builds were removed; the Linux presets remain as host builds for the tests
-> and for debugging game logic on a PC.
+> **This fork targets the Nintendo 3DS.** macOS and Android builds were
+> removed; the Linux and Windows presets remain as PC builds for the tests
+> and for debugging game logic.
 
 **OpenCMR2-ds** is the fork that brings the game to the **Nintendo 3DS**
 family, as an installable CIA or a Homebrew Launcher application. The
@@ -42,6 +42,7 @@ as it is made.
 | Linux | x86-64 | Plays stages and matches the original physics |
 | Linux | i686 | Plays stages, reference build with the original memory layout |
 | Linux | ARM64 | Builds and passes the tests, gameplay not yet tested |
+| Windows | x86-64 | Plays stages and matches the original physics (tested under Wine) |
 | Nintendo 3DS | ARM11 | Plays the menus and stages on an Old 3DS (CIA); being tuned ([3DS.md](docs/3DS.md)) |
 
 ### Features
@@ -238,6 +239,7 @@ Download the package for your platform from
 
 | Platform | Package |
 | --- | --- |
+| Windows x64 | `OpenCMR2-Windows-x64.zip` |
 | Linux x86-64 | `OpenCMR2-Linux-x86_64.tar.gz` |
 | Linux ARM64 | `OpenCMR2-Linux-arm64.tar.gz` |
 | Linux 32-bit | `OpenCMR2-Linux-i686.tar.gz` |
@@ -291,6 +293,7 @@ in `CMakePresets.json`:
 | Preset | Target |
 | --- | --- |
 | `linux` | Linux, 64-bit (x86-64 or ARM64) |
+| `windows-x64` | Windows x64 (`clang++` with the MSVC runtime) |
 | `linux-x86` | Linux, 32-bit x86 (reference build for the tests) |
 | `3ds` | Nintendo 3DS, with devkitARM (see [3DS.md](docs/3DS.md#building)) |
 
@@ -332,6 +335,20 @@ cmake --build --preset linux
 
 The executable is `build/linux/src/opencmr2`.
 
+### Windows
+
+Install Visual Studio 2022 with its "C++ Clang tools" component (or LLVM),
+Ninja and [glslang](https://github.com/KhronosGroup/glslang/releases). From an
+"x64 Native Tools" command prompt:
+
+```bat
+cmake --preset windows-x64
+cmake --build --preset windows-x64
+```
+
+`clang-cl` is not supported, as the build uses GNU-style options. To
+cross-build from Linux with LLVM-MinGW, see [WINDOWS.md](docs/WINDOWS.md).
+
 ### Tests
 
 ```sh
@@ -354,6 +371,7 @@ the rest of the development workflow are described in
 | [BASELINE.md](docs/BASELINE.md) | Stage capture, replay and CPU profiling |
 | [NETWORK.md](docs/NETWORK.md) | Network play setup and protocol |
 | [VIDEO.md](docs/VIDEO.md) | Bink decoder |
+| [WINDOWS.md](docs/WINDOWS.md) | Release packages and cross-building for Windows |
 | [3DS.md](docs/3DS.md) | Nintendo 3DS: installing, controls, limits and building |
 | [64bit-raw-access.md](docs/64bit-raw-access.md) | 64-bit memory access audit |
 
