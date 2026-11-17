@@ -66,65 +66,25 @@ target_include_directories(opencmr2_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} 
 target_link_libraries(opencmr2_platform PUBLIC SDL3::SDL3)
 
 
-if(ANDROID)
-    # SDLActivity loads libmain.so and calls its SDL_main.
-    add_library(opencmr2 SHARED platform/main.cpp)
-    set_target_properties(opencmr2 PROPERTIES OUTPUT_NAME main)
-elseif(NINTENDO_3DS)
+if(NINTENDO_3DS)
     add_executable(opencmr2 platform/main.cpp)
     set_target_properties(opencmr2 PROPERTIES SUFFIX .elf)
 else()
     add_executable(opencmr2 platform/main.cpp)
 endif()
 target_link_libraries(opencmr2 PRIVATE opencmr2_platform)
-if(WIN32)
-    target_sources(opencmr2 PRIVATE ${PROJECT_SOURCE_DIR}/res/opencmr2.rc)
-    # SDL3.dll (and any other runtime DLL) next to the executable.
-    add_custom_command(TARGET opencmr2 POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:opencmr2> $<TARGET_FILE_DIR:opencmr2>
-        COMMAND_EXPAND_LISTS)
-elseif(OPENCMR2_BUILT_SDL AND NOT ANDROID AND NOT NINTENDO_3DS)
+if(OPENCMR2_BUILT_SDL AND NOT NINTENDO_3DS)
     # The SDL3 built here goes next to the executable, which looks for it
-    # there, so the release archives run without SDL3 installed.
-    if(APPLE)
-        set_property(TARGET opencmr2 APPEND PROPERTY BUILD_RPATH "@executable_path")
-    else()
-        set_property(TARGET opencmr2 APPEND PROPERTY BUILD_RPATH "$ORIGIN")
-    endif()
+    # there, so the Linux build runs without SDL3 installed.
+    set_property(TARGET opencmr2 APPEND PROPERTY BUILD_RPATH "$ORIGIN")
     add_custom_command(TARGET opencmr2 POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_SONAME_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:opencmr2>)
 endif()
 
 if(NOT NINTENDO_3DS)
-# ---- shaders (GLSL -> SPIR-V, plus MSL for Metal; embedded) ----------------------
-# SDL_GPU takes SPIR-V on Vulkan (Linux, Windows) and MSL on Metal (macOS).
-# The MSL comes from the same SPIR-V through SPIRV-Cross; the SPIR-V bindings
-# already follow SDL_GPU's resource order, so they become the Metal indices.
-option(OPENCMR2_SHADERS_MSL "Also build Metal (MSL) shaders" ${APPLE})
+# ---- shaders (GLSL -> SPIR-V, embedded; desktop SDL_GPU renderer only) ------------
 # Recent glslang releases use glslang.exe; older packages keep glslangValidator.
 find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslang REQUIRED)
-if(OPENCMR2_SHADERS_MSL)
-    find_program(SPIRV_CROSS_EXECUTABLE spirv-cross)
-    if(SPIRV_CROSS_EXECUTABLE)
-        set(SPIRV_CROSS ${SPIRV_CROSS_EXECUTABLE})
-    else()
-        message(STATUS "OpenCMR2: building spirv-cross from source")
-        include(FetchContent)
-        # The command-line tool needs the GLSL, HLSL, MSL, C++ and reflection back ends.
-        foreach(option SPIRV_CROSS_ENABLE_TESTS SPIRV_CROSS_ENABLE_C_API SPIRV_CROSS_SHARED)
-            set(${option} OFF CACHE BOOL "" FORCE)
-        endforeach()
-        set(SPIRV_CROSS_CLI ON CACHE BOOL "" FORCE)
-        set(SPIRV_CROSS_STATIC ON CACHE BOOL "" FORCE)
-        set(SPIRV_CROSS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
-        FetchContent_Declare(SPIRV-Cross
-            GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Cross.git
-            GIT_TAG vulkan-sdk-1.4.363.0
-            GIT_SHALLOW TRUE)
-        FetchContent_MakeAvailable(SPIRV-Cross)
-        set(SPIRV_CROSS $<TARGET_FILE:spirv-cross>)
-    endif()
-endif()
 
 set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/render/shaders)
 set(SHADER_SOURCES fixed3d.vert fixedtl.vert fixed.frag clear.vert clear.frag)
@@ -138,15 +98,6 @@ foreach(shader IN LISTS SHADER_SOURCES)
         DEPENDS ${SHADER_DIR}/${shader} ${SHADER_DIR}/common.glsl
         COMMENT "Compiling shader ${shader}")
     list(APPEND SHADER_FILES ${output})
-    if(OPENCMR2_SHADERS_MSL)
-        set(msl ${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader}.msl)
-        add_custom_command(
-            OUTPUT ${msl}
-            COMMAND ${SPIRV_CROSS} --msl --msl-version 20100 --msl-decoration-binding --output ${msl} ${output}
-            DEPENDS ${output}
-            COMMENT "Translating shader ${shader} to MSL")
-        list(APPEND SHADER_FILES ${msl})
-    endif()
 endforeach()
 set(SHADER_HEADER ${CMAKE_CURRENT_BINARY_DIR}/generated/shaders_spirv.h)
 string(REPLACE ";" "|" SHADER_LIST "${SHADER_FILES}")
@@ -180,9 +131,6 @@ add_custom_command(
 add_library(opencmr2_shortcut STATIC platform/menu_shortcut.cpp ${ICON_HEADER})
 target_include_directories(opencmr2_shortcut PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(opencmr2_shortcut PUBLIC SDL3::SDL3)
-if(WIN32)
-    target_link_libraries(opencmr2_shortcut PRIVATE ole32 uuid shell32)
-endif()
 target_link_libraries(opencmr2_platform PUBLIC opencmr2_shortcut)
 
 # ---- network (UDP with ENet, third_party/enet) -------------------------------------
@@ -191,9 +139,7 @@ add_library(enet STATIC
     ${ENET_DIR}/callbacks.c ${ENET_DIR}/compress.c ${ENET_DIR}/host.c ${ENET_DIR}/list.c
     ${ENET_DIR}/packet.c ${ENET_DIR}/peer.c ${ENET_DIR}/protocol.c ${ENET_DIR}/unix.c ${ENET_DIR}/win32.c)
 target_include_directories(enet PUBLIC ${ENET_DIR}/include)
-if(WIN32)
-    target_link_libraries(enet PUBLIC ws2_32 winmm)
-elseif(NINTENDO_3DS)
+if(NINTENDO_3DS)
     # libctru's sockets (soc:u): no sendmsg/recvmsg (unix.c gathers the
     # buffers itself there) and no msg_flags.
     target_compile_definitions(enet PRIVATE HAS_FCNTL=1 HAS_GETADDRINFO=1 HAS_GETNAMEINFO=1

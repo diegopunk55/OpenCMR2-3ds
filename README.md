@@ -13,6 +13,10 @@ macOS and Android, and experimentally on the Nintendo 3DS. There is no emulation
 Direct3D 7, DirectSound, DirectInput, DirectPlay and Bink are replaced with
 SDL3, the SDL GPU API (Vulkan, Metal) and the port's own code.
 
+> **This fork targets the Nintendo 3DS only.** Windows, macOS and Android
+> builds were removed; the Linux presets remain as host builds for the tests
+> and for debugging game logic on a PC.
+
 **OpenCMR2-ds** is the fork that brings the game to the **Nintendo 3DS**
 family, as an installable CIA or a Homebrew Launcher application. The
 step-by-step guide is in [Nintendo 3DS](#nintendo-3ds) below.
@@ -38,9 +42,6 @@ as it is made.
 | Linux | x86-64 | Plays stages and matches the original physics |
 | Linux | i686 | Plays stages, reference build with the original memory layout |
 | Linux | ARM64 | Builds and passes the tests, gameplay not yet tested |
-| Windows | x86-64 | Plays stages and matches the original physics (tested under Wine) |
-| macOS | ARM64 | Builds and passes the tests, gameplay not yet tested |
-| Android | ARM64, x86-64 | Plays stages with on-screen controls (Android 10 or later, Vulkan) |
 | Nintendo 3DS | ARM11 | Plays the menus and stages on an Old 3DS (CIA); being tuned ([3DS.md](docs/3DS.md)) |
 
 ### Features
@@ -237,12 +238,9 @@ Download the package for your platform from
 
 | Platform | Package |
 | --- | --- |
-| Windows x64 | `OpenCMR2-Windows-x64.zip` |
 | Linux x86-64 | `OpenCMR2-Linux-x86_64.tar.gz` |
 | Linux ARM64 | `OpenCMR2-Linux-arm64.tar.gz` |
 | Linux 32-bit | `OpenCMR2-Linux-i686.tar.gz` |
-| macOS (Apple silicon) | `OpenCMR2-macOS-arm64.zip` |
-| Android | `OpenCMR2-Android.apk` |
 | Nintendo 3DS | `OpenCMR2-3DS.zip` (`.cia` and `.3dsx`): see [Nintendo 3DS](#nintendo-3ds) |
 
 Extract it and run `opencmr2`. On first launch, choose the folder of your PC
@@ -253,16 +251,8 @@ where they are.
 If you have the CD or an ISO, install the game or extract it first: OpenCMR2
 reads the installed folders (`Game`, `FrontEnd`, `Sounds`, ...).
 
-On Android, install the APK and copy the installation folder to the
-device first. On first launch, choose it in the system's folder picker: the
-game files are copied into the app once (about 700 MB), as Android gives
-apps no direct access to other folders. The on-screen controls press the
-default keyboard keys, so they work in the menus and on the stages, and
-hide while a gamepad is used, external or built into a handheld. Back pauses the game.
-
 The Linux packages are built on Ubuntu 24.04 and need a distribution of
-similar age or newer. The macOS package is not signed: after extracting it,
-run `xattr -dr com.apple.quarantine OpenCMR2-macOS-arm64` once.
+similar age or newer.
 
 Command-line options:
 
@@ -301,8 +291,6 @@ in `CMakePresets.json`:
 | Preset | Target |
 | --- | --- |
 | `linux` | Linux, 64-bit (x86-64 or ARM64) |
-| `windows-x64` | Windows x64 (`clang++` with the MSVC runtime) |
-| `macos` | macOS, Apple silicon |
 | `linux-x86` | Linux, 32-bit x86 (reference build for the tests) |
 | `3ds` | Nintendo 3DS, with devkitARM (see [3DS.md](docs/3DS.md#building)) |
 
@@ -344,50 +332,6 @@ cmake --build --preset linux
 
 The executable is `build/linux/src/opencmr2`.
 
-### macOS
-
-```sh
-brew install cmake ninja glslang sdl3
-cmake --preset macos
-cmake --build --preset macos
-```
-
-Metal needs MSL shaders, so the build fetches SPIRV-Cross to translate them
-(or uses `spirv-cross` from the `PATH`).
-
-### Windows
-
-Install Visual Studio 2022 with its "C++ Clang tools" component (or LLVM),
-Ninja and [glslang](https://github.com/KhronosGroup/glslang/releases). From an
-"x64 Native Tools" command prompt:
-
-```bat
-cmake --preset windows-x64
-cmake --build --preset windows-x64
-```
-
-`clang-cl` is not supported, as the build uses GNU-style options. To
-cross-build from Linux with LLVM-MinGW, see [WINDOWS.md](docs/WINDOWS.md).
-
-### Android
-
-The Gradle project in `android/` builds the same CMake project with the
-Android NDK. It needs JDK 17 or later, the Android SDK (with `ANDROID_HOME`
-set or `sdk.dir` in `android/local.properties`) and glslang on the `PATH`.
-Gradle downloads SDL's source and fetches the NDK, CMake and SDK platform
-when the SDK licences are accepted:
-
-```sh
-cd android
-./gradlew assembleRelease
-```
-
-The APK is `android/app/build/outputs/apk/release/app-release.apk`. It is
-signed with the release key given by `OPENCMR2_KEYSTORE`,
-`OPENCMR2_KEYSTORE_PASSWORD`, `OPENCMR2_KEY_ALIAS` and
-`OPENCMR2_KEY_PASSWORD` (or the `opencmr2.keystore` Gradle properties), and
-with the debug key otherwise.
-
 ### Tests
 
 ```sh
@@ -410,7 +354,6 @@ the rest of the development workflow are described in
 | [BASELINE.md](docs/BASELINE.md) | Stage capture, replay and CPU profiling |
 | [NETWORK.md](docs/NETWORK.md) | Network play setup and protocol |
 | [VIDEO.md](docs/VIDEO.md) | Bink decoder |
-| [WINDOWS.md](docs/WINDOWS.md) | Release packages and cross-building for Windows |
 | [3DS.md](docs/3DS.md) | Nintendo 3DS: installing, controls, limits and building |
 | [64bit-raw-access.md](docs/64bit-raw-access.md) | 64-bit memory access audit |
 

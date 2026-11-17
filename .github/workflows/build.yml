@@ -9,7 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  # 32-bit x86 reference build on the same Ubuntu LTS as native Linux.
   linux-x86:
     runs-on: ubuntu-24.04
     env:
@@ -41,140 +40,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y clang ninja-build glslang-tools \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
-            libwayland-dev wayland-protocols libegl1-mesa-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
-      - uses: actions/checkout@v4
-      # Ubuntu 24.04 has no SDL3 package: the build fetches it.
-      - run: cmake --preset linux -DOPENCMR2_VENDORED_SDL=ON
-      - run: cmake --build --preset linux
-      - run: ctest --preset linux
-      - name: Package
-        run: |
-          python3 tools/package_release.py --binary build/linux/src/opencmr2 \
-            --library build/linux/src/libSDL3.so.0 \
-            --license build/linux/_deps/sdl3-src/LICENSE.txt \
-            --output dist/OpenCMR2-Linux-${{ matrix.arch }}.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: OpenCMR2-Linux-${{ matrix.arch }}
-          path: dist/*
-          if-no-files-found: error
-
-  macos:
-    runs-on: macos-14
-    steps:
-      - run: brew install ninja glslang
-      - uses: actions/checkout@v4
-      # Builds SDL3, shipped in the release, and spirv-cross for the Metal shaders.
-      - run: cmake --preset macos -DOPENCMR2_VENDORED_SDL=ON
-      - run: cmake --build --preset macos
-      - run: ctest --preset macos
-      - name: Package
-        run: |
-          python3 tools/package_release.py --binary build/macos/src/opencmr2 \
-            --library build/macos/src/libSDL3.0.dylib \
-            --license build/macos/_deps/sdl3-src/LICENSE.txt \
-            --output dist/OpenCMR2-macOS-arm64.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: OpenCMR2-macOS-arm64
-          path: dist/*
-          if-no-files-found: error
-
-  windows:
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-      - name: glslang
-        shell: pwsh
-        run: |
-          curl.exe --fail --location --retry 3 --retry-delay 5 --output glslang.zip https://github.com/KhronosGroup/glslang/releases/download/main-tot/glslang-main-windows-x86_64-release.zip
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Expand-Archive glslang.zip -DestinationPath glslang
-          & "$PWD\glslang\bin\glslang.exe" --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Add-Content $env:GITHUB_PATH "$PWD\glslang\bin"
-      # clang++ from Visual Studio's LLVM component; SDL3 is fetched.
-      - run: cmake --preset windows-x64 -DOPENCMR2_VENDORED_SDL=ON
-      - run: cmake --build --preset windows-x64
-      - run: ctest --preset windows-x64
-      - name: Package
-        shell: pwsh
-        run: |
-          python -m pip install pefile==2024.8.26
-          $crt = Join-Path $env:VCToolsRedistDir "x64/Microsoft.VC143.CRT"
-          python tools/package_release.py --binary build/windows-x64/src/opencmr2.exe `
-            --dll-dir $crt --license build/windows-x64/_deps/sdl3-src/LICENSE.txt `
-            --output dist/OpenCMR2-Windows-x64.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: OpenCMR2-Windows-x64
-          path: dist/*
-          if-no-files-found: error
-
-  android:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # The version comes from git describe and the commit count.
-          fetch-depth: 0
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Install SDK, NDK and build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y glslang-tools
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
-            "platforms;android-37.0" "ndk;30.0.16248370" "cmake;4.1.2" > /dev/null
-      # Signed with the release key when the repository has it, otherwise
-      # with a debug key (see android/app/build.gradle.kts).
-      - name: Release key
-        env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-        if: env.KEYSTORE != ''
-        run: |
-          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
-          echo "OPENCMR2_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-      - name: Build
-        working-directory: android
-        env:
-          OPENCMR2_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          OPENCMR2_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          OPENCMR2_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
-      - name: Package
-        run: |
-          mkdir -p dist
-          cp android/app/build/outputs/apk/release/app-release.apk dist/OpenCMR2-Android.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: OpenCMR2-Android
-          path: dist/*
-          if-no-files-found: error
-
-  # Nintendo 3DS: devkitARM's container; makerom and bannertool for the CIA
-  # are built from source at fixed commits.
   nintendo-3ds:
     runs-on: ubuntu-24.04
     container: devkitpro/devkitarm:latest
@@ -206,7 +71,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux-x86, linux, macos, windows, android, nintendo-3ds]
+    needs: [linux-x86, nintendo-3ds]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
