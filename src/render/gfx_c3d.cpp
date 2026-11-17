@@ -17,6 +17,7 @@
 #include "port/sys.h"
 #include "render/gfx_internal.h"
 #include "platform/ctr.h"
+#include "diagnostics/frame_log.h"
 
 #include "shaders_pica.h"
 
@@ -27,8 +28,10 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 extern "C" u32 __ctru_heap_size;
@@ -375,6 +378,17 @@ struct Executor : GfxExecutor {
     float gpuMs = 0.0f;
     unsigned timedFrames = 0;
     size_t vertexBytes = 0;
+    // [3ds] stats_interval: frames between the log's summaries. Each summary
+    // also gets the worst frame and how many frames missed 60 and 30 fps.
+    unsigned statsInterval = 120;
+    u64 worstInterval = 0, worstGame = 0, lastPresentTick = 0;
+    unsigned over16 = 0, over33 = 0;
+    // The current frame's share of the above (system ticks), for the frame log.
+    u64 frameGame = 0, frameExecute = 0, frameWait = 0;
+    size_t frameVertexBytes = 0;
+    uint8_t frameFlags = 0;
+    // [3ds] frame_log = 1: every frame of a stage to frames-*.csv (diagnostics/frame_log.h).
+    std::unique_ptr<FrameLog::Recorder> frameLog;
     // [3ds] vsync = 1: each frame starts on a vblank, so the frame rate is
     // 60, 30, 20, 15... Off, a frame starts as soon as the GPU is done.
     bool vsync = false;
@@ -382,6 +396,8 @@ struct Executor : GfxExecutor {
 
     ~Executor() override
     {
+        if (frameLog)
+            ReportFrameLog(frameLog->Flush(), 0);
         if (!ready)
             return;
         if (inFrame)
@@ -667,6 +683,15 @@ struct Executor : GfxExecutor {
         textureMaxMenu = std::max(8, std::min(1024, Platform_GetSettingInt("3ds.texture_max_menu", 256)));
         stretch = Platform_GetSettingInt("3ds.stretch", 0) != 0;
         vsync = Platform_GetSettingInt("3ds.vsync", 0) != 0;
+        statsInterval = (unsigned)std::max(30, std::min(3600, Platform_GetSettingInt("3ds.stats_interval", 120)));
+        if (Platform_GetSettingInt("3ds.frame_log", 1)) {
+            char stamp[32] = "session";
+            time_t now = time(NULL);
+            struct tm *local = localtime(&now);
+            if (local != NULL)
+                strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", local);
+            frameLog.reset(new FrameLog::Recorder(Platform_GetUserDir(), stamp));
+        }
         useLighting = Platform_GetSettingInt("3ds.debug_lighting", 1) != 0;
         useFog = Platform_GetSettingInt("3ds.debug_fog", 1) != 0;
         useMipmaps = Platform_GetSettingInt("3ds.debug_mipmaps", 1) != 0;
@@ -981,6 +1006,7 @@ struct Executor : GfxExecutor {
         GPUCMD_GetBuffer(&addr, &size, &offset);
         if (size - offset >= 0x4000)
             return true;
+        frameFlags |= FrameLog::CutShort;
         if (dropped++ == 0)
             Sys_Log("gfx: command buffer full, dropping the rest of the frame");
         return false;
@@ -1437,6 +1463,57 @@ struct Executor : GfxExecutor {
 
     // ---- frames ----
 
+    static uint32_t Microseconds(u64 ticks)
+    {
+        return (uint32_t)std::min<u64>(ticks * 1000000ULL / SYSCLOCK_ARM11, 0xffffffffu);
+    }
+
+    // At the end of a presented frame: its sample to the frame log, then the
+    // next frame's shares start from zero.
+    void RecordFrame(u64 interval)
+    {
+        uint8_t nextFlags = 0;
+        if (frameLog) {
+            FrameLog::Sample s = {};
+            s.intervalUs = Microseconds(interval);
+            s.gameUs = Microseconds(frameGame);
+            s.renderUs = Microseconds(frameExecute > frameWait ? frameExecute - frameWait : 0);
+            s.waitUs = Microseconds(frameWait);
+            s.gpuUs = (uint32_t)std::max(0.0f, C3D_GetDrawingTime() * 1000.0f);
+            s.draws = (uint16_t)std::min(drawsThisFrame, 0xffffu);
+            s.vertexKB = (uint16_t)std::min<size_t>(frameVertexBytes / 1024, 0xffff);
+            s.cmdPercent = (uint8_t)std::min(100.0f, C3D_GetCmdBufUsage() * 100.0f);
+            int x = 0, z = 0;
+            Ctr_MapPlayerPosition(&x, &z);
+            s.carX = x;
+            s.carZ = z;
+            s.flags = frameFlags;
+            bool failedBefore = frameLog->Failed();
+            u64 start = svcGetSystemTick();
+            FrameLog::Written written = frameLog->Add(s, Ctr_IsDriving());
+            if (!written.path.empty()) {
+                ReportFrameLog(written, svcGetSystemTick() - start);
+                nextFlags |= FrameLog::FileWritten;
+            }
+            if (frameLog->Failed() && !failedBefore)
+                Sys_Log("frame log: no memory for the frames, not recording");
+        }
+        frameGame = frameExecute = frameWait = 0;
+        frameVertexBytes = 0;
+        frameFlags = nextFlags;
+    }
+
+    void ReportFrameLog(const FrameLog::Written &written, u64 ticks)
+    {
+        if (written.path.empty())
+            return;
+        if (written.ok)
+            Sys_Log("frame log: %u frames to %s in %.1f s", (unsigned)written.frames, written.path.c_str(),
+                    ticks / (float)SYSCLOCK_ARM11);
+        else
+            Sys_Log("frame log: could not write %s", written.path.c_str());
+    }
+
     void BeginFrame()
     {
         Ctr_Breadcrumb("starting frame %u: waiting for the GPU", frames + 1);
@@ -1461,7 +1538,9 @@ struct Executor : GfxExecutor {
             }
             svcSleepThread(1000000);
         }
-        waitTicks += svcGetSystemTick() - startTicks;
+        u64 waited = svcGetSystemTick() - startTicks;
+        waitTicks += waited;
+        frameWait += waited;
         last = Stats();
         FreeRetired();
         arenaUsed = 0;
@@ -1483,12 +1562,15 @@ struct Executor : GfxExecutor {
         if (!ready)
             return;
         executeStart = svcGetSystemTick();
-        if (executeEnd != 0)
+        if (executeEnd != 0) {
             gameTicks += executeStart - executeEnd;
+            frameGame += executeStart - executeEnd;
+        }
         UploadDirty(textures);
         if (!inFrame)
             BeginFrame();
         vertexBytes += frame.vertices.size();
+        frameVertexBytes += frame.vertices.size();
         minimalShader = minimalSetting || s_minimalShader;
         Ctr_Breadcrumb("frame %u: %u commands, %u vertex bytes%s", frames + 1, (unsigned)frame.commands.size(),
                        (unsigned)frame.vertices.size(), present ? "" : " (flush)");
@@ -1544,6 +1626,7 @@ struct Executor : GfxExecutor {
         if (!present) {
             executeEnd = svcGetSystemTick();
             executeTicks += executeEnd - executeStart;
+            frameExecute += executeEnd - executeStart;
             return;
         }
         Ctr_Breadcrumb("frame %u: ending", frames + 1);
@@ -1554,6 +1637,18 @@ struct Executor : GfxExecutor {
         inFrame = false;
         u64 previous = lastFrameEnd;
         lastFrameEnd = osGetTime();
+        u64 presentTick = svcGetSystemTick();
+        u64 interval = lastPresentTick != 0 ? presentTick - lastPresentTick : 0;
+        lastPresentTick = presentTick;
+        // Loads (a second or more without frames) are not frames missed.
+        if (interval < SYSCLOCK_ARM11) {
+            worstInterval = std::max(worstInterval, interval);
+            if (interval * 60 > SYSCLOCK_ARM11 + SYSCLOCK_ARM11 / 100)
+                over16++;
+            if (interval * 30 > SYSCLOCK_ARM11 + SYSCLOCK_ARM11 / 100)
+                over33++;
+            worstGame = std::max(worstGame, frameGame);
+        }
         Ctr_FrameShown();
         // The frame rate the bottom screen shows, every half second.
         fpsFrames++;
@@ -1566,6 +1661,8 @@ struct Executor : GfxExecutor {
             fpsFrames = 0;
         }
         // After a load: what it took the renderer.
+        if (converted > 0)
+            frameFlags |= FrameLog::TexturesConverted;
         if (previous != 0 && lastFrameEnd - previous > 2000 && converted > 0)
             Sys_Log("gfx: %.1f s without frames; %u textures converted in %.1f s", (lastFrameEnd - previous) / 1000.0f,
                     converted, convertMs / 1000.0f);
@@ -1575,7 +1672,8 @@ struct Executor : GfxExecutor {
         maxCmdUsage = std::max(maxCmdUsage, C3D_GetCmdBufUsage());
         gpuMs += C3D_GetDrawingTime();
         timedFrames++;
-        if (++frames % 600 == 0) {
+        if (++frames % statsInterval == 0) {
+            frameFlags |= FrameLog::SummaryLogged;
             float seconds = (lastFrameEnd - statsStart) / 1000.0f;
             float perFrame = 1000.0f / SYSCLOCK_ARM11 / timedFrames;
             Sys_Log("mem: heap %u of %u KB used, linear %u KB, VRAM %u KB free", (unsigned)(mallinfo().uordblks / 1024),
@@ -1586,11 +1684,16 @@ struct Executor : GfxExecutor {
             Sys_Log("time: a frame %.1f ms game, %.1f ms renderer, %.1f ms waiting for the GPU or the refresh (GPU %.1f ms); "
                     "%u KB of vertices", gameTicks * perFrame, (executeTicks - waitTicks) * perFrame, waitTicks * perFrame,
                     gpuMs / timedFrames, (unsigned)(vertexBytes / timedFrames / 1024));
+            Sys_Log("worst: frame %.1f ms, game %.1f ms; %u of %u frames over 16.7 ms, %u over 33.3 ms",
+                    worstInterval * 1000.0f / SYSCLOCK_ARM11, worstGame * 1000.0f / SYSCLOCK_ARM11, over16,
+                    timedFrames, over33);
             maxDraws = 0;
             maxCmdUsage = 0.0f;
             dropped = 0;
+            worstInterval = worstGame = 0;
+            over16 = over33 = 0;
         }
-        if (frames % 600 == 0 || statsStart == 0) {
+        if (frames % statsInterval == 0 || statsStart == 0) {
             statsStart = lastFrameEnd;
             gameTicks = executeTicks = waitTicks = 0;
             gpuMs = 0.0f;
@@ -1599,6 +1702,8 @@ struct Executor : GfxExecutor {
         }
         executeEnd = svcGetSystemTick();
         executeTicks += executeEnd - executeStart;
+        frameExecute += executeEnd - executeStart;
+        RecordFrame(interval);
         // No reads of the screen (the sun's visibility test): it reads as
         // covered, so there is no lens flare.
         if (readback.requested) {

@@ -211,9 +211,25 @@ void Ctr_MapSetFps(float fps)
     s_fps = fps;
 }
 
+static bool s_hasPlayer = false;
+static int s_playerX = 0, s_playerZ = 0;
+
+bool Ctr_MapPlayerPosition(int *x, int *z)
+{
+    *x = s_playerX;
+    *z = s_playerZ;
+    return s_hasPlayer;
+}
+
 extern "C" void StageMap_Update(const int *position, const unsigned char *flags, int routeCount, int stride,
                                 const int *cars, int carCount, int forwardX, int forwardZ)
 {
+    if (carCount >= 1) {
+        // For the frame log (render/gfx_c3d.cpp), with or without the map.
+        s_playerX = cars[0] >> 16;
+        s_playerZ = cars[1] >> 16;
+        s_hasPlayer = true;
+    }
     s_active = Ctr_MapWanted() && position != NULL && routeCount >= 2 && carCount >= 1;
     if (!s_active)
         return;

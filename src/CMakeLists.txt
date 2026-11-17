@@ -201,7 +201,8 @@ if(NINTENDO_3DS)
         VERBATIM
         DEPENDS ${PICA_BINARY} ${PROJECT_SOURCE_DIR}/cmake/embed_spirv.cmake
         COMMENT "Embedding the PICA shader")
-    target_sources(opencmr2_platform PRIVATE platform/ctr.cpp platform/ctr_map.cpp render/gfx_c3d.cpp ${PICA_HEADER})
+    target_sources(opencmr2_platform PRIVATE platform/ctr.cpp platform/ctr_map.cpp render/gfx_c3d.cpp
+        diagnostics/frame_log.cpp ${PICA_HEADER})
     target_link_libraries(opencmr2_platform PUBLIC citro3d ctru m)
 
     # Homebrew Launcher package (.3dsx with its .smdh) and the installable CIA.

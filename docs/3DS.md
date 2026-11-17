@@ -119,20 +119,45 @@ addition to the [general settings](../README.md#configuration):
 | `stretch` | `0` | `1` stretches the 4:3 picture over the whole top screen |
 | `vsync` | `0` | `1` starts each frame on the screen's refresh: steadier, but the frame rate drops in steps (60, 30, 20, 15) |
 | `console` | `1` | `0` stops writing the log on the bottom screen |
+| `stats_interval` | `120` | Frames between the log's summaries (30 to 3600) |
+| `frame_log` | `1` | `1` keeps every frame of a stage in memory and writes it to `frames-*.csv` when the stage ends; `0` turns it off |
 | `debug_lighting`, `debug_fog`, `debug_mipmaps` | `1` | `0` draws without lighting, fog or mipmaps, to find a feature the GPU does not take |
 | `debug_shader` | `0` | `1` draws 3D with the minimal vertex shader (`fixedmin.v.pica`: no lighting or texture matrices) |
 
 ## Problems
 
-The log is `sd:/3ds/OpenCMR2/opencmr2.log`. Every 600 frames it gets three
-lines on memory, drawing and where a frame's time goes (the game's own work,
-the renderer, waiting for the GPU or the screen refresh (at most 60 fps), and the GPU's drawing time):
+The log is `sd:/3ds/OpenCMR2/opencmr2.log`. Every 120 frames (`stats_interval`)
+it gets four lines: memory, drawing, where a frame's time goes on average (the
+game's own work, the renderer, waiting for the GPU or the screen refresh (at
+most 60 fps), and the GPU's drawing time), and the worst frame with how many
+frames missed 60 and 30 fps:
 
 ```
 mem: heap 7072 of 65268 KB used, linear 26040 KB, VRAM 5343 KB free
 gfx: 24.0 fps, up to 3006 draws and 30% of the command buffer a frame, 0 frames cut short
 time: a frame 30.1 ms game, 9.2 ms renderer, 0.4 ms waiting for the GPU or the refresh (GPU 12.0 ms); 410 KB of vertices
+worst: frame 52.3 ms, game 38.0 ms; 120 of 120 frames over 16.7 ms, 97 over 33.3 ms
 ```
+
+### Frame log
+
+While a stage is driven, every frame's timings stay in memory (about 1.3 MB,
+allocated once) and are written to `sd:/3ds/OpenCMR2/frames-<date>-<time>-<n>.csv`
+three seconds after the stage ends (or after 36,000 frames). Nothing is written
+to the SD card while driving, so recording costs a few stores a frame. The log
+then says `frame log: N frames to ... in X s`.
+
+| Column | Meaning |
+| --- | --- |
+| `time_ms`, `interval_ms` | When the frame was shown, and since the previous one |
+| `game_ms`, `render_ms`, `wait_ms`, `gpu_ms` | As in the `time:` line, for this frame alone |
+| `draws`, `cmd_pct`, `vertex_kb` | Draws, command buffer use and vertex data of the frame |
+| `car_x`, `car_z` | The player's car (world units), to find where on the stage a spike happens |
+| `flags` | 1: a summary was written to the log (its SD write costs time); 2: textures were converted; 4: the frame was cut short; 8: a full frame log was written before it |
+
+Paused frames are not kept, so `time_ms` skips over pauses. A pause of more
+than three seconds counts as the end of the stage: the frames so far are
+written, and the rest of the stage goes to the next file.
 
 On a stage, the game's graphics options (draw distance, effects, shadows,
 reflections) change most of the game's and the GPU's share. Car reflections

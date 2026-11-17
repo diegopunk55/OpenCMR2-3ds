@@ -158,3 +158,8 @@ if(WIN32)
         endif()
     endforeach()
 endif()
+
+# The 3DS renderer's per-frame log (no platform code, so it runs here).
+add_executable(frame_log_test frame_log.cpp ${PROJECT_SOURCE_DIR}/src/diagnostics/frame_log.cpp)
+target_include_directories(frame_log_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(NAME frame_log COMMAND frame_log_test)

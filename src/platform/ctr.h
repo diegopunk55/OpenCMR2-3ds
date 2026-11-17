@@ -38,6 +38,8 @@ void Ctr_PauseConsole(bool paused);
 bool Ctr_MapWanted(void);
 const uint32_t *Ctr_MapImage(bool *changed);
 void Ctr_MapSetFps(float fps);
+// The player's car on the stage, whole world units (false before a stage).
+bool Ctr_MapPlayerPosition(int *x, int *z);
 
 // The watchdog: when no frame has been shown for a few seconds, the log
 // gets what the game was last doing (the breadcrumb), every few seconds.
