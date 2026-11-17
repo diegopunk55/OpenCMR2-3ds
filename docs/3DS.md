@@ -139,6 +139,19 @@ time: a frame 30.1 ms game, 9.2 ms renderer, 0.4 ms waiting for the GPU or the r
 worst: frame 52.3 ms, game 38.0 ms; 120 of 120 frames over 16.7 ms, 97 over 33.3 ms
 ```
 
+### Getting the logs over Wi-Fi
+
+Run [ftpd](https://github.com/mtheall/ftpd) on the console (the `.3dsx`, from
+the Homebrew Launcher; it shows the console's IP and listens on port 5000),
+then on the PC (bash and curl; Git Bash on Windows):
+
+```sh
+echo CTR_HOST=192.168.1.50 > tools/3ds.env   # the IP ftpd shows, once
+tools/3ds.sh pull           # opencmr2.log and frames-*.csv to captures/<date-time>/
+tools/3ds.sh pull --clean   # the same, then delete the frames-*.csv on the SD card
+tools/3ds.sh put opencmr2.ini   # settings to sd:/3ds/OpenCMR2/
+```
+
 ### Frame log
 
 While a stage is driven, every frame's timings stay in memory (about 1.3 MB,
