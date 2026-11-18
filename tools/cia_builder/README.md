@@ -24,7 +24,10 @@ share it.
      [python.org](https://www.python.org/downloads/)). If something is
      wrong with Python, its window stays open with the error.
      `CIA Builder (debug).bat` runs the tool in a console that stays open
-     after it closes, with every message and error.
+     after it closes, with every message and error. The `.bat` finds Python
+     on the PATH, in the registry (python.org and Store installs) or in the
+     usual folders, and otherwise opens the `.py` the way a double-click
+     does; `"CIA Builder.bat" which` shows which Python it found.
    - Linux: `python3 cia_builder_gui.py` (needs Tk: `pacman -S tk` on
      CachyOS/Arch, `apt install python3-tk` on Debian/Ubuntu).
 3. **Browse** to the `CMR2.exe` of your installed game. The window checks
