@@ -255,7 +255,10 @@ bool Ctr_HasRomfs(void)
 }
 
 extern "C" u32 __ctru_heap_size, __ctru_linear_heap_size;
-extern "C" u32 g_ctrLinearWanted, g_ctrLinearTries;   // platform/main.cpp
+// Filled by __system_allocateHeaps (platform/main.cpp) before main.
+extern "C" {
+u32 g_ctrLinearWanted = 0, g_ctrLinearTries = 0;
+}
 
 // The kernel's application memory types (3dbrew: Memory layout).
 static const char *MemTypeName(u32 type)

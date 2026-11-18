@@ -37,7 +37,7 @@ extern u32 __ctru_heap, __ctru_heap_size, __ctru_linear_heap;
 // that the heap's 96 MB leave, at least __ctru_linear_heap_size, stepping
 // down 4 MB at a time until the kernel gives it. The heap then takes the
 // rest, up to its range. Ctr_LogSystem logs what was asked and given.
-u32 g_ctrLinearWanted = 0, g_ctrLinearTries = 0;
+extern u32 g_ctrLinearWanted, g_ctrLinearTries;   // platform/ctr.cpp, which every 3DS program links
 
 void __system_allocateHeaps(void)
 {
