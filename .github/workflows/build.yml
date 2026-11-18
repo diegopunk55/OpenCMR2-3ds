@@ -74,9 +74,40 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # makerom for Windows, for the CIA Builder (tools/cia_builder), from the
+  # same Project_CTR commit as the 3DS job's.
+  makerom-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: git make mingw-w64-x86_64-gcc
+      - name: makerom
+        run: |
+          git init -q /tmp/ctr && git -C /tmp/ctr fetch -q --depth 1 https://github.com/3DSGuy/Project_CTR d52c2b0e788c2d085763d7c5dcc4b2edd9ffb7d8
+          git -C /tmp/ctr checkout -q FETCH_HEAD
+          make -C /tmp/ctr/makerom deps -j4 && make -C /tmp/ctr/makerom program -j4
+          mkdir -p dist
+          cp /tmp/ctr/makerom/bin/makerom.exe dist/
+          # The MinGW runtime DLLs it links, if any.
+          for dll in $(objdump -p dist/makerom.exe | sed -n 's/.*DLL Name: //p'); do
+            [ -f "/mingw64/bin/$dll" ] && cp "/mingw64/bin/$dll" dist/ || true
+          done
+          ls dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: makerom-windows
+          path: dist/*
+          if-no-files-found: error
+
   nintendo-3ds:
     runs-on: ubuntu-24.04
     container: devkitpro/devkitarm:latest
+    needs: makerom-windows
     steps:
       - uses: actions/checkout@v4
       - name: makerom and bannertool
@@ -101,6 +132,40 @@ jobs:
         with:
           name: OpenCMR2-3DS
           path: dist/*
+          if-no-files-found: error
+      - uses: actions/download-artifact@v4
+        with:
+          name: makerom-windows
+          path: /tmp/makerom-windows
+      - name: CIA Builder
+        run: |
+          # The PC tool that builds a standalone CIA with your game files (or an
+          # SD card folder): tools/cia_builder, the game's ELF and the CIA's
+          # banner, icon and settings, and makerom for Linux and Windows.
+          kit=kit/OpenCMR2-CIA-Builder
+          mkdir -p $kit/kit/bin/linux-x86_64 $kit/kit/bin/windows-x86_64
+          cp tools/cia_builder/*.py tools/cia_builder/README.md LICENSE $kit/
+          cp build/3ds/src/opencmr2.elf res/3ds/opencmr2.rsf build/3ds/src/cia/icon.icn build/3ds/src/cia/banner.bnr $kit/kit/
+          cp /tmp/tools3ds/makerom $kit/kit/bin/linux-x86_64/
+          cp /tmp/makerom-windows/* $kit/kit/bin/windows-x86_64/
+          echo "${GITHUB_SHA}" > $kit/kit/VERSION
+          cd kit && zip -qr OpenCMR2-CIA-Builder.zip OpenCMR2-CIA-Builder
+      - name: CIA Builder smoke test
+        run: |
+          # A fake installation through the real kit: the CIA must build.
+          command -v python3 || { apt-get update -qq && apt-get install -y -qq python3; }
+          fake=/tmp/fake-cmr2
+          mkdir -p $fake/Game/Bigfiles $fake/FrontEnd $fake/Sounds $fake/Movies
+          for f in Game/Bigfiles/common.bfl FrontEnd/common.bfl Sounds/surface.bfl Movies/intro.bik; do
+            head -c 4096 /dev/urandom > $fake/$f
+          done
+          echo exe > $fake/CMR2.exe
+          python3 kit/OpenCMR2-CIA-Builder/cia_builder.py --exe $fake/CMR2.exe --cia /tmp/smoke.cia
+          test -s /tmp/smoke.cia
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenCMR2-CIA-Builder
+          path: kit/OpenCMR2-CIA-Builder.zip
           if-no-files-found: error
 
   release:

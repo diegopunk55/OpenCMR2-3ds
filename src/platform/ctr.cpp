@@ -211,6 +211,8 @@ void Ctr_Breadcrumb(const char *format, ...)
     s_crumbIndex = next;
 }
 
+static bool s_romfs = false;
+
 bool Ctr_Init(void)
 {
     osSetSpeedupEnable(true);   // New 3DS: 804 MHz and the L2 cache
@@ -218,6 +220,9 @@ bool Ctr_Init(void)
     consoleInit(GFX_BOTTOM, NULL);
     s_console = true;
     printf("\x1b[1;1HOpenCMR2 for Nintendo 3DS\n\n");
+    // The game files, when a CIA was built with them (tools/cia_builder):
+    // the data search tries romfs:/ before the SD card (platform/sys.cpp).
+    s_romfs = R_SUCCEEDED(romfsInit());
     // Sockets for network play; without them the game has no network.
     s_socBuffer = (u32 *)memalign(0x1000, s_socSize);
     if (s_socBuffer != NULL && R_FAILED(socInit(s_socBuffer, s_socSize))) {
@@ -234,10 +239,19 @@ void Ctr_Shutdown(void)
         free(s_socBuffer);
         s_socBuffer = NULL;
     }
+    if (s_romfs) {
+        romfsExit();
+        s_romfs = false;
+    }
     if (s_console) {
         s_console = false;
         gfxExit();
     }
+}
+
+bool Ctr_HasRomfs(void)
+{
+    return s_romfs;
 }
 
 void Ctr_Print(const char *line)

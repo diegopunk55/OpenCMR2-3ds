@@ -69,6 +69,14 @@ or the chat, is typed on the system keyboard: press X in a menu.
 
 ## Installing
 
+The easiest way is a **standalone CIA** with your game files inside, made on
+your PC by the [CIA Builder](../tools/cia_builder/README.md) (the
+`OpenCMR2-CIA-Builder` download of a build): pick your `CMR2.exe`, build,
+install the CIA with FBI, then do step 3 below. The game reads its files from
+the CIA first and from the SD card second.
+
+Otherwise, with the plain CIA:
+
 1. Install `OpenCMR2.cia` with FBI (or another title manager). Instead, you
    can copy `opencmr2.3dsx` to `sd:/3ds/` and start it from the Homebrew
    Launcher. The CIA gets more memory and, on a New 3DS, the faster CPU.
@@ -76,7 +84,8 @@ or the chat, is typed on the system keyboard: press X in a menu.
    to `sd:/3ds/OpenCMR2/Data/`, so that `sd:/3ds/OpenCMR2/Data/Game/Bigfiles/common.bfl`
    exists. The movie folder can be left out, as the videos are skipped. If
    you have the CD, install the game on a PC first: the 3DS reads the
-   installed folders.
+   installed folders. The CIA Builder's "SD card folder" output does this
+   copy for you.
 3. Sound needs the console's DSP firmware dump (`sd:/3ds/dspfirm.cdc`). Run
    the DSP1 homebrew once if you do not have it. Without it the game runs
    silently.

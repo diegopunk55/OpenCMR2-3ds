@@ -137,6 +137,10 @@ in [3DS.md](docs/3DS.md#building).
 
 ### 3. Copy the game to the SD card
 
+Or skip this step: the
+[CIA Builder](tools/cia_builder/README.md) makes one CIA with your game
+files inside.
+
 Put the SD card in a card reader (or use an FTP server on the console, such
 as [ftpd](https://github.com/mtheall/ftpd)) and copy the **contents** of the
 PC installation folder (by default

@@ -9,6 +9,8 @@
 // Speeds up the CPU on a New 3DS, starts the screens and the bottom-screen log.
 bool Ctr_Init(void);
 void Ctr_Shutdown(void);
+// The CIA's own files (romfs:/) are mounted: a standalone CIA may hold the game data.
+bool Ctr_HasRomfs(void);
 
 // A line on the bottom-screen log.
 void Ctr_Print(const char *line);

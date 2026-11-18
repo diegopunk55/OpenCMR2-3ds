@@ -673,7 +673,10 @@ bool Platform_Init(int argc, char **argv)
 
     std::vector<std::string> candidates;
 #ifdef __3DS__
-    // The PC installation copied to the SD card.
+    // A standalone CIA carries the game files in its romfs (tools/cia_builder);
+    // otherwise, the PC installation copied to the SD card.
+    if (Ctr_HasRomfs())
+        candidates.push_back("romfs:/");
     candidates.push_back(s_userDir + "Data");
 #endif
     if (!dataDir.empty()) {
@@ -715,6 +718,7 @@ bool Platform_Init(int argc, char **argv)
         const std::string message = "The game files were not found.\n\n"
             "Copy the folders of your Colin McRae Rally 2.0 PC installation "
             "(Game, FrontEnd, Sounds, ...) to:\n\n  " + s_userDir + "Data\n\n"
+            "or install a CIA built with the game files (tools/cia_builder).\n\n"
             "Missing:" + MissingGameData(s_userDir + "Data/");
         Sys_Log("%s", message.c_str());
         Ctr_ShowMessage("OpenCMR2 - Game files", message.c_str());
