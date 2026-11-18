@@ -7,7 +7,9 @@ toolkit). Linux: python3 cia_builder_gui.py, with Tk installed
 """
 
 import queue
+import sys
 import threading
+import traceback
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -149,7 +151,9 @@ class App(tk.Tk):
                 builder.build_sd(self.install, Path(self.output.get()), progress)
             self.events.put(("done", None, None))
         except Exception as error:   # shown to the user, never lost in a thread
-            self.events.put(("error", str(error), None))
+            details = traceback.format_exc()
+            print(details, file=sys.stderr, flush=True)   # the debug .bat's console
+            self.events.put(("error", str(error), details))
 
     def poll(self):
         try:
@@ -175,6 +179,7 @@ class App(tk.Tk):
                         self.status.config(text=builder.describe(self.install))
                     if kind == "error":
                         self.write("Error: " + message)
+                        self.write(fraction)   # the traceback, to copy from the log
                         messagebox.showerror("OpenCMR2 CIA Builder", message)
                     else:
                         self.write("Done.")
@@ -189,5 +194,24 @@ class App(tk.Tk):
         self.log.config(state="disabled")
 
 
+def main():
+    try:
+        App().mainloop()
+    except Exception:
+        # Started without a console (pyw), a crash would leave no trace.
+        details = traceback.format_exc()
+        print(details, file=sys.stderr, flush=True)
+        log = Path(__file__).resolve().parent / "cia_builder_error.log"
+        try:
+            log.write_text(details, encoding="utf-8")
+        except OSError:
+            pass
+        try:
+            messagebox.showerror("OpenCMR2 CIA Builder", f"The CIA Builder stopped:\n\n{details}\nSaved to {log}")
+        except Exception:
+            pass
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    App().mainloop()
+    main()

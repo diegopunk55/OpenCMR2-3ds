@@ -21,8 +21,10 @@ share it.
    (Actions → a green run → Artifacts) and extract it.
 2. Start the window:
    - Windows: double-click `CIA Builder.bat` (needs Python 3 from
-     [python.org](https://www.python.org/downloads/); it says so if Python
-     is missing).
+     [python.org](https://www.python.org/downloads/)). If something is
+     wrong with Python, its window stays open with the error.
+     `CIA Builder (debug).bat` runs the tool in a console that stays open
+     after it closes, with every message and error.
    - Linux: `python3 cia_builder_gui.py` (needs Tk: `pacman -S tk` on
      CachyOS/Arch, `apt install python3-tk` on Debian/Ubuntu).
 3. **Browse** to the `CMR2.exe` of your installed game. The window checks
@@ -40,6 +42,10 @@ python3 cia_builder.py --exe "<install>/CMR2.exe" --cia OpenCMR2-full.cia
 python3 cia_builder.py --exe "<install>/CMR2.exe" --sd E:/
 ```
 
+Errors show in a message box and, with the details to copy, in the
+window's log. If the window itself crashes while starting, the details go to
+`cia_builder_error.log` next to the tool.
+
 Building the CIA needs about twice the game's size free (the files are
 staged, then packed), and takes a while for a few hundred MB.
 
@@ -48,6 +54,7 @@ staged, then packed), and takes a while for a few hundred MB.
 ```
 cia_builder.py, cia_builder_gui.py   the tool (Python 3.8+, no packages)
 CIA Builder.bat                      starts the window on Windows
+CIA Builder (debug).bat              the same, in a console that stays open
 kit/opencmr2.elf                     the game, as built by CI
 kit/opencmr2.rsf, icon.icn, banner.bnr   the CIA's settings, icon and banner
 kit/bin/linux-x86_64/makerom         makerom (Project_CTR), Linux
