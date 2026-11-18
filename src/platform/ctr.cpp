@@ -256,17 +256,67 @@ bool Ctr_HasRomfs(void)
 
 extern "C" u32 __ctru_heap_size, __ctru_linear_heap_size;
 
+// The kernel's application memory types (3dbrew: Memory layout).
+static const char *MemTypeName(u32 type)
+{
+    switch (type) {
+    case 0: return "64 MB";
+    case 2: return "96 MB";
+    case 3: return "80 MB";
+    case 4: return "72 MB";
+    case 5: return "32 MB";
+    case 6: return "New 3DS 124 MB";
+    case 7: return "New 3DS 178 MB";
+    default: return "unknown";
+    }
+}
+
 void Ctr_LogSystem(void)
 {
     bool isNew = false;
     APT_CheckNew3DS(&isNew);
     u32 app = osGetMemRegionSize(MEMREGION_APPLICATION);
-    Sys_Log("system: %s 3DS, %u MB for the game: heap %u MB, linear %u MB", isNew ? "New" : "Old",
-            (unsigned)(app >> 20), (unsigned)(__ctru_heap_size >> 20), (unsigned)(__ctru_linear_heap_size >> 20));
-    // The CIA asks for 124 MB on a New 3DS; started from another program
-    // (FBI, the Homebrew Launcher) it can keep that one's memory mode instead.
-    if (isNew && app < (120u << 20))
-        Sys_Log("system: a New 3DS gives 124 MB: start OpenCMR2 from the HOME Menu, or stages may run out of memory");
+    u32 type = osGetApplicationMemType();
+    Sys_Log("system: %s 3DS, %u MB for the game (memory type %u, %s): heap %u MB, linear %u MB",
+            isNew ? "New" : "Old", (unsigned)(app >> 20), (unsigned)type, MemTypeName(type),
+            (unsigned)(__ctru_heap_size >> 20), (unsigned)(__ctru_linear_heap_size >> 20));
+}
+
+bool Ctr_CheckSystem(void)
+{
+    bool isNew = false;
+    APT_CheckNew3DS(&isNew);
+    u32 app = osGetMemRegionSize(MEMREGION_APPLICATION);
+    u32 type = osGetApplicationMemType();
+    if (isNew && app >= (120u << 20))
+        return true;
+    if (Platform_GetSettingInt("3ds.allow_low_memory", 0) != 0) {
+        Sys_Log("system: allow_low_memory = 1: starting with %u MB; stages may run out of memory", (unsigned)(app >> 20));
+        return true;
+    }
+    char text[768];
+    if (!isNew) {
+        snprintf(text, sizeof(text),
+                 "This port needs a New 3DS, New 3DS XL\n"
+                 "or New 2DS XL: its stages need the\n"
+                 "124 MB of memory those give a game.\n\n"
+                 "This console gives %u MB.", (unsigned)(app >> 20));
+    } else {
+        snprintf(text, sizeof(text),
+                 "The game got %u MB of memory\n"
+                 "(type %u: %s), not the New 3DS's\n"
+                 "124 MB: stages would run out.\n\n"
+                 "Start OpenCMR2 from its HOME Menu icon,\n"
+                 "after turning the console off and on,\n"
+                 "with no other program started first.\n\n"
+                 "To start anyway (for tests), put\n"
+                 "  [3ds]\n  allow_low_memory=1\n"
+                 "in sdmc:/3ds/OpenCMR2/opencmr2.ini.",
+                 (unsigned)(app >> 20), (unsigned)type, MemTypeName(type));
+    }
+    Sys_Log("system: not starting: %s", isNew ? "less than 124 MB" : "not a New 3DS");
+    Ctr_ShowMessage("OpenCMR2 - Memory", text);
+    return false;
 }
 
 void Ctr_Print(const char *line)

@@ -735,6 +735,11 @@ bool Platform_Init(int argc, char **argv)
     Sys_Log("user directory: %s", s_userDir.c_str());
 #ifdef __3DS__
     Ctr_LogSystem();
+    if (!Ctr_CheckSystem()) {
+        s_setupCanceled = true;
+        Platform_Shutdown();
+        return false;
+    }
 #endif
     // Only for the player's own settings: tools and tests use --user-dir.
     const char *headless = SDL_getenv("OPENCMR2_HEADLESS");
