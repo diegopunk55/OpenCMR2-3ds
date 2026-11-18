@@ -31,10 +31,15 @@ fixed-function pipeline.
 | Memory for the game | 64 MB (the game refuses to start) | 178 MB (CIA) |
 | Expected speed | slow; stages may run well below 30 fps | better |
 
-The game keeps its 640x480 picture and draws it at half size, 320x240 in 4:3,
-in the middle of the 400x240 top screen. The menus are drawn at the full
-640x480 and halved smoothly by the display transfer, so their text stays
-readable; the fonts are never shrunk.
+The game runs at 800x480, twice the 400x240 top screen, and its picture is
+drawn at half size over the whole screen. Its camera keeps the vertical view
+of the original 4:3 and widens the horizontal one, so the wider screen shows
+more of the stage instead of stretching it; the menus and the HUD keep their
+places as fractions of the screen. The menus are drawn at the full 800x480
+and halved smoothly by the display transfer, so their text stays readable;
+the fonts are never shrunk. With `widescreen = 0` the game keeps the
+original 640x480, 4:3 in the middle of the screen (or stretched with
+`stretch = 1`).
 
 While driving, the screens share the HUD. The top one keeps only the rev
 counter with the gear (and the speed), so that the road is clear. The bottom
@@ -132,7 +137,8 @@ addition to the [general settings](../README.md#configuration):
 | `menu_supersample` | `1` | `1` draws the menus at 640x480 and halves them (sharper text); `0` draws them at half size |
 | `map` | `1` | `1` shows the stage map and the HUD on the bottom screen while driving; `0` keeps the log there and the whole HUD on top |
 | `movies` | `0` | `1` plays the Bink videos |
-| `stretch` | `0` | `1` stretches the 4:3 picture over the whole top screen |
+| `widescreen` | `1` | The game at 800x480, filling the top screen with a wider view; `0`: the original 640x480, 4:3 |
+| `stretch` | `0` | With `widescreen = 0`, `1` stretches the 4:3 picture over the whole top screen |
 | `vsync` | `0` | `1` starts each frame on the screen's refresh: steadier, but the frame rate drops in steps (60, 30, 20, 15) |
 | `console` | `1` | `0` stops writing the log on the bottom screen |
 | `allow_low_memory` | `0` | `1` starts the game with less than 124 MB (or on an Old 3DS), for tests: stages may run out of memory |

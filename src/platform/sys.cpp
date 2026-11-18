@@ -1040,8 +1040,12 @@ extern "C" void Sys_ShowCursor(BOOL show)
 extern "C" void Sys_GetDesktopSize(int *width, int *height)
 {
 #ifdef __3DS__
-    // The game's own 640x480, scaled to the top screen by the renderer.
-    *width = 640;
+    // Twice the 400x240 top screen ([3ds] widescreen, the default): the game
+    // then shows a wider view (its projection keeps the vertical one) and
+    // fills the screen. widescreen = 0: the original 640x480, 4:3 in the
+    // middle of the screen (or stretched with [3ds] stretch = 1).
+    bool wide = Platform_GetSettingInt("3ds.widescreen", 1) != 0;
+    *width = wide ? 800 : 640;
     *height = 480;
     return;
 #endif

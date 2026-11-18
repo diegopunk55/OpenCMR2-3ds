@@ -211,6 +211,12 @@ void BuildModes()
             std::find(s_modes.begin(), s_modes.end(), std::make_pair(w, h)) == s_modes.end())
             s_modes.push_back({ w, h });
     };
+#ifdef __3DS__
+    // The 3DS offers only the top screen's own (Sys_GetDesktopSize): a saved
+    // resolution of another shape falls back to it.
+    add(desktopW, desktopH);
+    return;
+#endif
     for (const auto &c : classic)
         add(c[0], c[1]);
     for (int h : heights)

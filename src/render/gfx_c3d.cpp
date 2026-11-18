@@ -3,8 +3,8 @@
 // combiners for Direct3D 7's texture stages.
 //
 // The game keeps its 640x480 back buffer; its picture is drawn at half size
-// on the 400x240 top screen (4:3 in the middle, or stretched with [3ds]
-// stretch = 1), the screen being rotated as the 3DS has it. Textures are
+// on the 400x240 top screen (filling it at the default 800x480, [3ds]
+// widescreen; at 640x480, 4:3 in the middle or stretched with [3ds] stretch = 1), the screen being rotated as the 3DS has it. Textures are
 // shrunk to [3ds] texture_max, converted to 16-bit formats and their CPU
 // copies released (gfx_core.cpp, Upload) to fit the console's memory.
 //
@@ -558,7 +558,9 @@ struct Executor : GfxExecutor {
             if (UpdateMapTexture()) {
                 GfxTLVertex *v = (GfxTLVertex *)Allocate(4 * sizeof(GfxTLVertex));
                 if (v != NULL) {
-                    float xs[4] = { 0, 640, 0, 640 }, ys[4] = { 0, 0, 480, 480 };
+                    // The whole bottom screen, in the game's 2D coordinates.
+                    float gw = (float)gameWidth, gh = (float)gameHeight;
+                    float xs[4] = { 0, gw, 0, gw }, ys[4] = { 0, 0, gh, gh };
                     float us[4] = { 0, 320 / 512.0f, 0, 320 / 512.0f }, vs[4] = { 0, 0, 240 / 256.0f, 240 / 256.0f };
                     for (int i = 0; i < 4; i++)
                         v[i] = { xs[i] - 0.5f, ys[i] - 0.5f, 0.5f, 1.0f, 0xffffffff, 0, us[i], vs[i] };
