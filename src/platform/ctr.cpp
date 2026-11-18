@@ -255,6 +255,7 @@ bool Ctr_HasRomfs(void)
 }
 
 extern "C" u32 __ctru_heap_size, __ctru_linear_heap_size;
+extern "C" u32 g_ctrLinearWanted, g_ctrLinearTries;   // platform/main.cpp
 
 // The kernel's application memory types (3dbrew: Memory layout).
 static const char *MemTypeName(u32 type)
@@ -280,6 +281,9 @@ void Ctr_LogSystem(void)
     Sys_Log("system: %s 3DS, %u MB for the game (memory type %u, %s): heap %u MB, linear %u MB",
             isNew ? "New" : "Old", (unsigned)(app >> 20), (unsigned)type, MemTypeName(type),
             (unsigned)(__ctru_heap_size >> 20), (unsigned)(__ctru_linear_heap_size >> 20));
+    if (g_ctrLinearTries > 1)
+        Sys_Log("system: linear memory: %u MB asked, %u MB given after %u tries", (unsigned)(g_ctrLinearWanted >> 20),
+                (unsigned)(__ctru_linear_heap_size >> 20), (unsigned)g_ctrLinearTries);
 }
 
 bool Ctr_CheckSystem(void)
@@ -305,7 +309,7 @@ bool Ctr_CheckSystem(void)
         snprintf(text, sizeof(text),
                  "The game got %u MB of memory\n"
                  "(type %u: %s), not the New 3DS's\n"
-                 "124 MB: stages would run out.\n\n"
+                 "124 MB or more: stages would run out.\n\n"
                  "Start OpenCMR2 from its HOME Menu icon,\n"
                  "after turning the console off and on,\n"
                  "with no other program started first.\n\n"

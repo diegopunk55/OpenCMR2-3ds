@@ -26,12 +26,19 @@ extern char *fake_heap_start;
 extern char *fake_heap_end;
 extern u32 __ctru_heap, __ctru_heap_size, __ctru_linear_heap;
 
-// Replaces libctru's (weak) one. libctru 2.7.0 gives the heap all the memory
-// left after the linear part, but the heap's address range is only 96 MB
-// (OS_HEAP_AREA_*): in the New 3DS's 124 MB mode that is about 97 MB, the
-// allocation fails and the game stops at once (svcBreak). Here the heap gets
-// at most the range and the rest goes to linear memory, which is never less
-// than __ctru_linear_heap_size.
+// Replaces libctru's (weak) one, for two reasons:
+// - libctru 2.7.0 gives the heap all the memory left after the linear part,
+//   but the heap's address range is only 96 MB (OS_HEAP_AREA_*): with 124 MB
+//   or more the allocation fails and the game stops at once (svcBreak).
+// - Linear memory must be one physically contiguous block, and the New 3DS's
+//   178 MB region spans its two 128 MB banks of FCRAM, so the largest block
+//   the kernel can give is not known in advance (the NFSU2 3DS port hit this).
+// So linear memory is taken first, while the region is least fragmented: all
+// that the heap's 96 MB leave, at least __ctru_linear_heap_size, stepping
+// down 4 MB at a time until the kernel gives it. The heap then takes the
+// rest, up to its range. Ctr_LogSystem logs what was asked and given.
+u32 g_ctrLinearWanted = 0, g_ctrLinearTries = 0;
+
 void __system_allocateHeaps(void)
 {
     Handle reslimit = 0;
@@ -43,25 +50,34 @@ void __system_allocateHeaps(void)
     svcGetResourceLimitCurrentValues(&currentCommit, reslimit, &type, 1);
     svcCloseHandle(reslimit);
 
-    u32 remaining = (u32)(maxCommit - currentCommit) & ~0xFFFu;
-    u32 linear = __ctru_linear_heap_size;
-    if (linear > remaining)
-        svcBreak(USERBREAK_PANIC);
-    u32 heap = remaining - linear;
     const u32 area = OS_HEAP_AREA_END - OS_HEAP_AREA_BEGIN;
-    if (heap > area) {
-        linear += heap - area;
+    const u32 minimum = __ctru_linear_heap_size;
+    const u32 step = 4u << 20;
+    u32 remaining = (u32)(maxCommit - currentCommit) & ~0xFFFu;
+    if (minimum > remaining)
+        svcBreak(USERBREAK_PANIC);
+    u32 linear = remaining - minimum > area ? remaining - area : minimum;
+    g_ctrLinearWanted = linear;
+    for (;;) {
+        g_ctrLinearTries++;
+        if (R_SUCCEEDED(svcControlMemory(&__ctru_linear_heap, 0x0, 0x0, linear, MEMOP_ALLOC_LINEAR,
+                                         (MemPerm)(MEMPERM_READ | MEMPERM_WRITE))))
+            break;
+        if (linear < minimum + step)
+            svcBreak(USERBREAK_PANIC);
+        linear -= step;
+    }
+    u32 heap = remaining - linear;
+    if (heap > area)
         heap = area;
+    while (R_FAILED(svcControlMemory(&__ctru_heap, OS_HEAP_AREA_BEGIN, 0x0, heap, MEMOP_ALLOC,
+                                     (MemPerm)(MEMPERM_READ | MEMPERM_WRITE)))) {
+        if (heap < step * 4)
+            svcBreak(USERBREAK_PANIC);
+        heap -= step;
     }
     __ctru_heap_size = heap;
     __ctru_linear_heap_size = linear;
-
-    if (R_FAILED(svcControlMemory(&__ctru_heap, OS_HEAP_AREA_BEGIN, 0x0, heap, MEMOP_ALLOC,
-                                  (MemPerm)(MEMPERM_READ | MEMPERM_WRITE))))
-        svcBreak(USERBREAK_PANIC);
-    if (R_FAILED(svcControlMemory(&__ctru_linear_heap, 0x0, 0x0, linear, MEMOP_ALLOC_LINEAR,
-                                  (MemPerm)(MEMPERM_READ | MEMPERM_WRITE))))
-        svcBreak(USERBREAK_PANIC);
     mappableInit(OS_MAP_AREA_BEGIN, OS_MAP_AREA_END);
     fake_heap_start = (char *)__ctru_heap;
     fake_heap_end = fake_heap_start + heap;

@@ -28,7 +28,7 @@ fixed-function pipeline.
 | | Old 3DS / 2DS | New 3DS / New 2DS XL |
 | --- | --- | --- |
 | CPU | 268 MHz | 804 MHz, with the L2 cache |
-| Memory for the game | 80 MB (CIA) | 124 MB (CIA) |
+| Memory for the game | 64 MB (the game refuses to start) | 178 MB (CIA) |
 | Expected speed | slow; stages may run well below 30 fps | better |
 
 The game keeps its 640x480 picture and draws it at half size, 320x240 in 4:3,
@@ -69,10 +69,12 @@ or the chat, is typed on the system keyboard: press X in a menu.
 
 ## Installing
 
-This fork needs a **New 3DS, New 3DS XL or New 2DS XL**: a stage needs the
-124 MB of memory those give a game, and the game says so and stops when it
-gets less (the first lines of the log show what it got). Start it from its
-HOME Menu icon.
+This fork needs a **New 3DS, New 3DS XL or New 2DS XL**. Its CIA asks for
+their largest memory mode, 178 MB: a 96 MB heap and about 75 MB of linear
+(GPU) memory. A stage needs at least the 124 MB mode, and the game says so
+and stops when it gets less (the first lines of the log show what it got).
+Start it from its HOME Menu icon; after installing a new version, turn the
+console off and on first (a launch right after an install may get 64 MB).
 
 The easiest way is a **standalone CIA** with your game files inside, made on
 your PC by the [CIA Builder](../tools/cia_builder/README.md) (the
@@ -133,7 +135,7 @@ addition to the [general settings](../README.md#configuration):
 | `stretch` | `0` | `1` stretches the 4:3 picture over the whole top screen |
 | `vsync` | `0` | `1` starts each frame on the screen's refresh: steadier, but the frame rate drops in steps (60, 30, 20, 15) |
 | `console` | `1` | `0` stops writing the log on the bottom screen |
-| `allow_low_memory` | `0` | `1` starts the game without the New 3DS's 124 MB (or on an Old 3DS), for tests: stages may run out of memory |
+| `allow_low_memory` | `0` | `1` starts the game with less than 124 MB (or on an Old 3DS), for tests: stages may run out of memory |
 | `stats_interval` | `120` | Frames between the log's summaries (30 to 3600) |
 | `frame_log` | `1` | `1` keeps every frame of a stage in memory and writes it to `frames-*.csv` when the stage ends; `0` turns it off |
 | `debug_lighting`, `debug_fog`, `debug_mipmaps` | `1` | `0` draws without lighting, fog or mipmaps, to find a feature the GPU does not take |
