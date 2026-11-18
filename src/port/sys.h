@@ -58,6 +58,9 @@ void Sys_DestroyWindow(void);
 void Sys_ShowCursor(BOOL show);
 /* Size of the desktop the window is on (GetSystemMetrics(SM_C?SCREEN)). */
 void Sys_GetDesktopSize(int *width, int *height);
+/* A one-press shift straight into reverse (and back to first) was asked for
+   since the last call: the 3DS's X on a stage. Always FALSE elsewhere. */
+BOOL Sys_TakeQuickReverse(void);
 
 /* ---- message boxes ---- */
 

@@ -1037,6 +1037,15 @@ extern "C" void Sys_ShowCursor(BOOL show)
         SDL_HideCursor();
 }
 
+extern "C" BOOL Sys_TakeQuickReverse(void)
+{
+#ifdef __3DS__
+    return Ctr_TakeQuickReverse() ? TRUE : FALSE;
+#else
+    return FALSE;
+#endif
+}
+
 extern "C" void Sys_GetDesktopSize(int *width, int *height)
 {
 #ifdef __3DS__

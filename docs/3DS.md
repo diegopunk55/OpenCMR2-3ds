@@ -111,14 +111,17 @@ shows the keyboard. In menus and on a stage they mean different things:
 
 | Button | Menus | Stage |
 | --- | --- | --- |
-| Circle Pad, D-Pad | Move | Steer (up and down also accelerate and brake) |
-| A | Confirm | Accelerate |
-| B | Back | Brake |
-| Y | | Handbrake |
-| R / L | | Gear up / down |
-| X | System keyboard (typing) | Camera |
+| Circle Pad | Move | Steer (only) |
+| D-Pad | Move | Steer; up and down also accelerate and brake |
+| R | | Accelerate |
+| L | | Brake (held when stopped: reverse, with the automatic gearbox) |
+| A | Confirm | Handbrake |
+| B | Back | Gear up |
+| Y | | Gear down |
+| X | System keyboard (typing) | Quick reverse: straight into reverse, or from reverse into first (manual gearbox) |
 | START | Confirm | Pause |
 | SELECT | | Confirm |
+| ZL (New 3DS) | | Camera |
 | ZR (New 3DS) | | Key R of the keyboard controls |
 | Touch screen | Confirm | Confirm |
 

@@ -369,6 +369,13 @@ void AutoGear_RequestAdjacentGear(void)
             if (g_pAutoGearCar->requestedGear < 0)
                 g_pAutoGearCar->requestedGear = 7;
         }
+    } else if (g_pAutoGearCar->field_0x1d4[0] == 2) {
+        // PORT: the quick reverse (StageObject_UpdatePlayerControlIndicators):
+        // from any forward gear or neutral straight into reverse, and from
+        // reverse into first, with an ordinary shift's delay.
+        g_pAutoGearCar->requestedGear = g_pAutoGearCar->gear == 7 ? 1 : 7;
+        g_pAutoGearCar->shiftInProgress = 1;
+        g_pAutoGearCar->damageShiftDelay = (char)g_autoGearPartSet->gearShiftDamage;
     }
 }
 

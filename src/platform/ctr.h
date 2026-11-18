@@ -11,6 +11,8 @@ bool Ctr_Init(void);
 void Ctr_Shutdown(void);
 // The CIA's own files (romfs:/) are mounted: a standalone CIA may hold the game data.
 bool Ctr_HasRomfs(void);
+// X was pressed on a stage since the last call: the gearbox's quick reverse.
+bool Ctr_TakeQuickReverse(void);
 // Logs the console and the memory the game got.
 void Ctr_LogSystem(void);
 // This port needs a New 3DS in its 124 MB mode: false (after saying why on

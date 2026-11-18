@@ -3,6 +3,7 @@
 short Car_GetOrderCount(void);
 #include "SoundCurve.h"
 #include "FloatToInt.h"
+#include "port/sys.h"
 #include "port/disk.h"
 #include "port/disk_layouts.h"
 #include "port/replay_disk.h"
@@ -12559,6 +12560,10 @@ void StageObject_UpdatePlayerControlIndicators(int player, int device)
                 g_controlCar->field_0x1d4[0] = 1;
             if ((pDev->field_0x8 & g_carButtonMasks[6]) != 0)
                 g_controlCar->field_0x1d4[0] = 0xff;
+            // PORT: a quick reverse (the 3DS's X), handled with the other
+            // shift requests in AutoGear_RequestAdjacentGear.
+            if (Sys_TakeQuickReverse())
+                g_controlCar->field_0x1d4[0] = 2;
         }
     }
     if (CGameInfo::IsActiveCheatEnabled(2) != 0) {

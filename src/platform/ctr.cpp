@@ -110,15 +110,18 @@ void MapButtons(u32 held, const circlePosition &circle, bool touch, bool down[25
     // The touch screen confirms everywhere (result screens on a stage).
     down[DIK_RETURN] = touch;
     if (s_driving) {
-        down[DIK_UP] = up || (held & KEY_A);                // accelerate
-        down[DIK_DOWN] = dn || (held & KEY_B);              // brake
-        down[DIK_SPACE] = (held & KEY_Y) != 0;             // handbrake
-        down[DIK_RBRACKET] = (held & KEY_R) != 0;          // gear up
-        down[DIK_LBRACKET] = (held & KEY_L) != 0;          // gear down
-        down[DIK_C] = (held & KEY_X) != 0;                 // camera
+        // The Circle Pad only steers on a stage; the D-Pad's up and down
+        // still accelerate and brake.
+        down[DIK_UP] = (held & (KEY_R | KEY_DUP)) != 0;      // accelerate
+        down[DIK_DOWN] = (held & (KEY_L | KEY_DDOWN)) != 0;  // brake
+        down[DIK_SPACE] = (held & KEY_A) != 0;             // handbrake
+        down[DIK_RBRACKET] = (held & KEY_B) != 0;          // gear up
+        down[DIK_LBRACKET] = (held & KEY_Y) != 0;          // gear down
+        down[DIK_C] = (held & KEY_ZL) != 0;                // (New 3DS) camera
         down[DIK_R] = (held & KEY_ZR) != 0;                // (New 3DS) rear view
         down[DIK_ESCAPE] = (held & KEY_START) != 0;        // pause
         down[DIK_RETURN] = touch || (held & KEY_SELECT);
+        // X: straight into reverse and back (Ctr_TakeQuickReverse).
     } else {
         down[DIK_UP] = up;
         down[DIK_DOWN] = dn;
@@ -212,6 +215,14 @@ void Ctr_Breadcrumb(const char *format, ...)
 }
 
 static bool s_romfs = false;
+static bool s_quickReverse = false;
+
+bool Ctr_TakeQuickReverse(void)
+{
+    bool pressed = s_quickReverse;
+    s_quickReverse = false;
+    return pressed;
+}
 
 bool Ctr_Init(void)
 {
@@ -385,6 +396,8 @@ bool Ctr_Update(void)
     MapButtons(hidKeysHeld(), circle, (hidKeysHeld() & KEY_TOUCH) != 0, down);
     if (!s_driving && (hidKeysDown() & KEY_X))
         TypeText();
+    if (s_driving && (hidKeysDown() & KEY_X))
+        s_quickReverse = true;
     u64 now = osGetTime();
     for (int dik = 0; dik < 256; dik++) {
         if (down[dik] && !s_down[dik]) {
