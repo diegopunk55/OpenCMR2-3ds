@@ -733,6 +733,9 @@ bool Platform_Init(int argc, char **argv)
     }
     Sys_Log("game data: %s", s_dataDir.c_str());
     Sys_Log("user directory: %s", s_userDir.c_str());
+#ifdef __3DS__
+    Ctr_LogSystem();
+#endif
     // Only for the player's own settings: tools and tests use --user-dir.
     const char *headless = SDL_getenv("OPENCMR2_HEADLESS");
     if (userDir.empty() && (headless == NULL || *headless == '0'))

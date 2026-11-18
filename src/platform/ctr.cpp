@@ -254,6 +254,21 @@ bool Ctr_HasRomfs(void)
     return s_romfs;
 }
 
+extern "C" u32 __ctru_heap_size, __ctru_linear_heap_size;
+
+void Ctr_LogSystem(void)
+{
+    bool isNew = false;
+    APT_CheckNew3DS(&isNew);
+    u32 app = osGetMemRegionSize(MEMREGION_APPLICATION);
+    Sys_Log("system: %s 3DS, %u MB for the game: heap %u MB, linear %u MB", isNew ? "New" : "Old",
+            (unsigned)(app >> 20), (unsigned)(__ctru_heap_size >> 20), (unsigned)(__ctru_linear_heap_size >> 20));
+    // The CIA asks for 124 MB on a New 3DS; started from another program
+    // (FBI, the Homebrew Launcher) it can keep that one's memory mode instead.
+    if (isNew && app < (120u << 20))
+        Sys_Log("system: a New 3DS gives 124 MB: start OpenCMR2 from the HOME Menu, or stages may run out of memory");
+}
+
 void Ctr_Print(const char *line)
 {
     if (s_console && !s_consolePaused) {

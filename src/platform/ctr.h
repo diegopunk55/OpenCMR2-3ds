@@ -11,6 +11,9 @@ bool Ctr_Init(void);
 void Ctr_Shutdown(void);
 // The CIA's own files (romfs:/) are mounted: a standalone CIA may hold the game data.
 bool Ctr_HasRomfs(void);
+// Logs the console and the memory the game got (and a warning when a New 3DS
+// did not give it the 124 MB its CIA asks for).
+void Ctr_LogSystem(void);
 
 // A line on the bottom-screen log.
 void Ctr_Print(const char *line);
