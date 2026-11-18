@@ -6,6 +6,10 @@
 #include "port/diagnostics.h"
 #include "render/gfx_internal.h"
 
+#ifdef __3DS__
+#include <3ds.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -13,6 +17,26 @@
 #include <string.h>
 
 #include <algorithm>
+
+void *Gfx_AllocGeometry(size_t bytes)
+{
+#ifdef __3DS__
+    return linearAlloc(bytes);
+#else
+    return malloc(bytes);
+#endif
+}
+
+void Gfx_FreeGeometry(void *block)
+{
+    if (block == NULL)
+        return;
+#ifdef __3DS__
+    linearFree(block);
+#else
+    free(block);
+#endif
+}
 
 namespace {
 
@@ -39,6 +63,13 @@ GfxMatrix Identity()
     return m;
 }
 
+// A new value for GfxDrawState's keys, never given before.
+static uint32_t s_lastKey;
+static inline uint32_t NewKey()
+{
+    return ++s_lastKey;
+}
+
 void ResetState()
 {
     s_state = GfxDrawState();
@@ -54,6 +85,10 @@ void ResetState()
     s_state.viewport.height = s_height;
     s_state.viewport.minZ = 0.0f;
     s_state.viewport.maxZ = 1.0f;
+    s_state.worldKey = NewKey();
+    s_state.viewKey = NewKey();
+    s_state.projectionKey = NewKey();
+    s_state.lightKey = NewKey();
     s_stateDirty = true;
 }
 
@@ -71,13 +106,23 @@ uint32_t RecordState()
     return (uint32_t)s_frame.states.size() - 1;
 }
 
+// The vertices' offset, or ~0 without memory for them.
 uint32_t AppendVertices(const void *data, size_t bytes)
 {
     size_t offset = s_frame.vertices.size();
-    const uint8_t *p = (const uint8_t *)data;
-    s_frame.vertices.insert(s_frame.vertices.end(), p, p + bytes);
+    uint8_t *out = s_frame.vertices.Append(bytes);
+    if (out == NULL)
+        return ~0u;
+    memcpy(out, data, bytes);
     return (uint32_t)offset;
 }
+
+// The vertices and indices of the frame before (the GPU may still be
+// drawing it while this one is recorded); swapped at each present.
+static GfxArray<uint8_t> s_spareVertices;
+static GfxArray<uint16_t> s_spareIndices;
+
+
 
 // OPENCMR2_GFX_TRACE=file: one line per draw (primitive, counts, a hash of the
 // vertices, indices and bound texture sizes, and the calling game function),
@@ -161,14 +206,16 @@ void RecordDraw(int primitive, bool transformed, const void *vertices, DWORD ver
         cmd.firstVertexByte = AppendVertices((const uint8_t *)vertices + lo * stride, cmd.vertexCount * stride);
         cmd.firstIndex = (uint32_t)s_frame.indices.size();
         cmd.indexCount = indexCount;
-        size_t first = s_frame.indices.size();
-        s_frame.indices.resize(first + indexCount);
-        uint16_t *out = s_frame.indices.data() + first;
+        uint16_t *out = cmd.firstVertexByte != ~0u ? s_frame.indices.Append(indexCount) : NULL;
+        if (out == NULL)
+            return;
         for (DWORD i = 0; i < indexCount; i++)
             out[i] = (uint16_t)(indices[i] - lo);
     } else {
         cmd.vertexCount = vertexCount;
         cmd.firstVertexByte = AppendVertices(vertices, vertexCount * stride);
+        if (cmd.firstVertexByte == ~0u)
+            return;
         cmd.firstIndex = ~0u;
         cmd.indexCount = 0;
     }
@@ -460,6 +507,9 @@ static void Present(BOOL vsync, bool stretch)
     ReleaseTextureCopies();
     if (s_executor != NULL)
         s_executor->Execute(s_frame, s_textures, s_readback, true, vsync != 0, stretch);
+    // The next frame is recorded where the one before this was.
+    s_frame.vertices.Swap(s_spareVertices);
+    s_frame.indices.Swap(s_spareIndices);
     s_frame.Reset();
     s_stateDirty = true;
     // A frame always starts on the back buffer.
@@ -479,6 +529,21 @@ extern "C" void Gfx_SetDrawScreen(int screen) { s_drawScreen = screen; }
 static bool s_raceMode;
 extern "C" void Gfx_SetRaceMode(BOOL race) { s_raceMode = race != FALSE; }
 bool Gfx_IsRaceMode(void) { return s_raceMode; }
+extern "C" float Gfx_GetTextScale(int lineHeight)
+{
+#ifdef __3DS__
+    // [3ds] text_scale (100..200, default 130) for fonts whose lines are
+    // shorter than [3ds] text_scale_below pixels (default 24: the menus'
+    // 12 and 15 point fonts, not the big titles).
+    static const float scale =
+        std::max(100, std::min(200, Platform_GetSettingInt("3ds.text_scale", 130))) / 100.0f;
+    static const int below = Platform_GetSettingInt("3ds.text_scale_below", 24);
+    if (!s_raceMode && lineHeight > 0 && lineHeight < below)
+        return scale;
+#endif
+    (void)lineHeight;
+    return 1.0f;
+}
 extern "C" BOOL Gfx_CanRenderToTextures(void) { return s_executor == NULL || s_executor->RendersToTextures(); }
 extern "C" void Gfx_PresentStretched(BOOL vsync) { Present(vsync, true); }
 
@@ -491,7 +556,11 @@ static void Flush(void)
     }
     if (s_executor != NULL)
         s_executor->Execute(s_frame, s_textures, s_readback, false, false);
+#ifdef __3DS__
+    s_frame.Reset(true);    // the GPU reads the vertices when the frame ends
+#else
     s_frame.Reset();
+#endif
     s_stateDirty = true;
     if (s_target != NULL)
         Gfx_SetRenderTarget(s_target);
@@ -552,9 +621,9 @@ extern "C" void Gfx_SetRenderTarget(GfxTexture *target)
 extern "C" void Gfx_SetTransform(int type, const GfxMatrix *matrix)
 {
     switch (type) {
-    case GFX_TRANSFORM_WORLD: s_state.world = *matrix; break;
-    case GFX_TRANSFORM_VIEW: s_state.view = *matrix; break;
-    case GFX_TRANSFORM_PROJECTION: s_state.projection = *matrix; break;
+    case GFX_TRANSFORM_WORLD: s_state.world = *matrix; s_state.worldKey = NewKey(); break;
+    case GFX_TRANSFORM_VIEW: s_state.view = *matrix; s_state.viewKey = NewKey(); break;
+    case GFX_TRANSFORM_PROJECTION: s_state.projection = *matrix; s_state.projectionKey = NewKey(); break;
     case GFX_TRANSFORM_TEXTURE0: s_state.texture[0] = *matrix; break;
     case GFX_TRANSFORM_TEXTURE1: s_state.texture[1] = *matrix; break;
     }
@@ -577,6 +646,7 @@ extern "C" void Gfx_SetLight(int index, const GfxLight *light)
 {
     if (index >= 0 && index < 8) {
         s_state.lights[index] = *light;
+        s_state.lightKey = NewKey();
         Touch();
     }
 }
@@ -591,6 +661,7 @@ extern "C" void Gfx_EnableLight(int index, BOOL enable)
 {
     if (index >= 0 && index < 8) {
         s_state.lightEnabled[index] = enable != 0;
+        s_state.lightKey = NewKey();
         Touch();
     }
 }

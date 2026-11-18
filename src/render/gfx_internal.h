@@ -7,7 +7,9 @@
 #include "port/gfx.h"
 
 #include <stdint.h>
+#include <string.h>
 
+#include <algorithm>
 #include <vector>
 
 // ---- textures and buffers --------------------------------------------------------
@@ -86,6 +88,9 @@ struct GfxDrawState {
     DWORD textureFactor = 0xffffffff;
     GfxStageState stages[2];
     GfxViewport viewport;
+    // Change with the matrices and the lights (a new value at each set), so
+    // that an executor can tell that draws share them without comparing.
+    uint32_t worldKey = 0, viewKey = 0, projectionKey = 0, lightKey = 0;
 };
 
 enum GfxCommandType {
@@ -114,15 +119,81 @@ struct GfxCommand {
     GfxTexture *target;         // NULL: the back buffer
 };
 
+// Memory for a frame's vertices and indices (gfx_core.cpp): on the 3DS
+// linear memory, which the GPU reads where the draws were recorded.
+void *Gfx_AllocGeometry(size_t bytes);
+void Gfx_FreeGeometry(void *block);
+
+// A frame's vertices or indices. A block that grows keeps its old one
+// until it is cleared: draws already sent to the GPU may still read it.
+template <typename T> struct GfxArray {
+    T *items = nullptr;
+    size_t count = 0, capacity = 0;
+    std::vector<void *> old;
+
+    GfxArray() {}
+    GfxArray(const GfxArray &) = delete;
+    GfxArray &operator=(const GfxArray &) = delete;
+    ~GfxArray()
+    {
+        clear();
+        Gfx_FreeGeometry(items);
+    }
+    size_t size() const { return count; }
+    bool empty() const { return count == 0; }
+    T *data() { return items; }
+    const T *data() const { return items; }
+    T &operator[](size_t i) { return items[i]; }
+    const T &operator[](size_t i) const { return items[i]; }
+    void clear()
+    {
+        count = 0;
+        for (void *block : old)
+            Gfx_FreeGeometry(block);
+        old.clear();
+    }
+    // Room for n more items at the end, returned (NULL without memory).
+    T *Append(size_t n)
+    {
+        if (count + n > capacity) {
+            size_t wanted = std::max<size_t>(count + n, capacity < 4096 ? 65536 / sizeof(T) : capacity * 2);
+            T *bigger = (T *)Gfx_AllocGeometry(wanted * sizeof(T));
+            if (bigger == nullptr)
+                return nullptr;
+            if (count != 0)
+                memcpy(bigger, items, count * sizeof(T));
+            if (items != nullptr)
+                old.push_back(items);
+            items = bigger;
+            capacity = wanted;
+        }
+        T *p = items + count;
+        count += n;
+        return p;
+    }
+    void Swap(GfxArray &other)
+    {
+        std::swap(items, other.items);
+        std::swap(count, other.count);
+        std::swap(capacity, other.capacity);
+        old.swap(other.old);
+    }
+};
+
 struct GfxFrame {
-    std::vector<uint8_t> vertices;
-    std::vector<uint16_t> indices;
+    GfxArray<uint8_t> vertices;
+    GfxArray<uint16_t> indices;
     std::vector<GfxDrawState> states;
     std::vector<GfxCommand> commands;
-    void Reset()
+    // keepGeometry: the frame goes on after a flush, and the vertices and
+    // indices already recorded stay where they are (the 3DS's GPU reads
+    // them at the end of the frame).
+    void Reset(bool keepGeometry = false)
     {
-        vertices.clear();
-        indices.clear();
+        if (!keepGeometry) {
+            vertices.clear();
+            indices.clear();
+        }
         states.clear();
         commands.clear();
     }

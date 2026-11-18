@@ -235,6 +235,10 @@ BOOL Gfx_CanRenderToTextures(void);
 /* The game is in a race (stage loading, driving, its results, replay and
    pause) rather than the frontend menus. */
 void Gfx_SetRaceMode(BOOL race);
+/* How much larger than its bitmap a font with lines this tall is drawn: on
+   the 3DS, the menus' small fonts ([3ds] text_scale, in percent), since the
+   screen shows the menus at half size; 1 elsewhere and in a race. */
+float Gfx_GetTextScale(int lineHeight);
 
 /* A handheld's second screen (the 3DS's bottom one) for the HUD: 2D queued
    between Hud_SetScreen(GFX_SCREEN_SECOND) and Hud_SetScreen(GFX_SCREEN_MAIN)

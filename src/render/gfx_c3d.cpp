@@ -300,6 +300,7 @@ struct Executor : GfxExecutor {
     unsigned fpsFrames = 0;
     int textureMaxMenu = 256;
     bool supersample = false, bigFailed = false;
+    unsigned bigRetryFrame = 0;
     DVLB_s *dvlb = nullptr;
     std::vector<uint32_t> shaderCode;       // the DVLB, word-aligned
     shaderProgram_s program3D, programTL, programMin;
@@ -318,7 +319,10 @@ struct Executor : GfxExecutor {
     bool minimalShader = false, minimalSetting = false;
     int textureMax = 128;
 
-    // Vertices and indices of the frame, in linear memory.
+    // How much of the frame's vertices and indices earlier Executes of it
+    // flushed (a frame flushed before its present continues in them).
+    size_t flushedVertexBytes = 0, flushedIndices = 0;
+    // Vertices of clears and the bottom screen, in linear memory.
     uint8_t *arena = nullptr;
     size_t arenaSize = 0, arenaUsed = 0;
     std::vector<void *> retiredLinear;      // freed once the GPU is done
@@ -333,7 +337,7 @@ struct Executor : GfxExecutor {
     // every frame); 0 turns it off. The log's "render:" lines give the
     // averages, and on every frame the state changes that reach citro3d.
     enum ProfilePart { PROF_TEXTURES, PROF_COPY, PROF_UNIFORMS, PROF_STATE, PROF_SUBMIT, PROF_BOTTOM, PROF_END,
-                       PROF_PARTS };
+                       PROF_BEGIN, PROF_CLEARS, PROF_LOOP, PROF_FINISH, PROF_PARTS };
     unsigned profileEvery = 8;
     bool profiling = false;             // this frame is timed
     u64 profTicks[PROF_PARTS] = {};
@@ -441,11 +445,18 @@ struct Executor : GfxExecutor {
     void ChooseTarget()
     {
         bool menu = supersample && !Gfx_IsRaceMode();
-        if (menu && big == NULL && !bigFailed) {
+        // Without VRAM for it (the stage's textures may still hold it on
+        // the first menu frames), tried again every second.
+        if (menu && big == NULL && frames >= bigRetryFrame) {
             big = C3D_RenderTargetCreate(480, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
             if (big == NULL) {
-                bigFailed = true;       // tried again after the next stage
-                Sys_Log("gfx: no VRAM for drawing the menus at full size");
+                if (!bigFailed)
+                    Sys_Log("gfx: no VRAM for drawing the menus at full size yet");
+                bigFailed = true;
+                bigRetryFrame = frames + 60;
+            } else if (bigFailed) {
+                Sys_Log("gfx: the menus are drawn at full size again");
+                bigFailed = false;
             }
         }
         if (!menu && big != NULL) {
@@ -453,8 +464,10 @@ struct Executor : GfxExecutor {
             C3D_RenderTargetDelete(big);
             big = NULL;
         }
-        if (!menu)
+        if (!menu) {
             bigFailed = false;
+            bigRetryFrame = 0;
+        }
         C3D_RenderTarget *wanted = menu && big != NULL ? big : top;
         if (wanted != target)
             Output(wanted);
@@ -783,7 +796,7 @@ struct Executor : GfxExecutor {
     {
         bytes = (bytes + 15) & ~(size_t)15;
         if (arenaUsed + bytes > arenaSize) {
-            size_t size = std::max(arenaSize * 2, std::max(bytes, (size_t)0x100000));
+            size_t size = std::max(arenaSize * 2, std::max(bytes, (size_t)0x10000));
             uint8_t *bigger = (uint8_t *)linearAlloc(size);
             if (bigger == NULL) {
                 Sys_Log("gfx: out of linear memory (%u bytes)", (unsigned)size);
@@ -1016,15 +1029,17 @@ struct Executor : GfxExecutor {
 
     // ---- uniforms (written only when they change) ----
 
-    void SetF(int id, float x, float y, float z, float w)
+    // Whether the uniform changed.
+    bool SetF(int id, float x, float y, float z, float w)
     {
         if (id < 0)
-            return;
+            return false;
         C3D_FVec &v = C3D_FVUnif[GPU_VERTEX_SHADER][id];
         if (v.x == x && v.y == y && v.z == z && v.w == w)
-            return;
+            return false;
         C3D_FVUnifSet(GPU_VERTEX_SHADER, id, x, y, z, w);
         changes.uniforms++;
+        return true;
     }
 
     void SetB(int id, bool value)
@@ -1374,22 +1389,44 @@ struct Executor : GfxExecutor {
         sent.valid = true;
     }
 
+    // The state keys (GfxDrawState) of the matrices and lights in the
+    // uniforms; 0 is never a key.
+    struct Cached {
+        bool valid = false, minimal = false;
+        uint32_t projection = 0, world = 0, view = 0, light = 0, lightView = 0;
+        DWORD ambient = 0;
+    } cached;
+
     // The vertex shader's uniforms for a 3D draw.
     void Set3DUniforms(const GfxDrawState &s)
     {
         // Projection, column-vector rows, rotated for the screen (x' = y,
         // y' = -x) and with depth to [-1, 0] (z' = -z).
+        // The matrices and lights are worked out again only when the draw
+        // has others than the last one (most draws of an object share them).
+        if (!cached.valid || cached.minimal != minimalShader) {
+            cached = Cached();
+            cached.valid = true;
+            cached.minimal = minimalShader;
+        }
         const GfxMatrix &p = s.projection;
         int projection = minimalShader ? uMinProjection : u3d.projection;
         int modelView = minimalShader ? uMinModelView : u3d.modelView;
-        SetF(projection + 0, At(p, 0, 1), At(p, 1, 1), At(p, 2, 1), At(p, 3, 1));
-        SetF(projection + 1, -At(p, 0, 0), -At(p, 1, 0), -At(p, 2, 0), -At(p, 3, 0));
-        SetF(projection + 2, -At(p, 0, 2), -At(p, 1, 2), -At(p, 2, 2), -At(p, 3, 2));
-        SetF(projection + 3, At(p, 0, 3), At(p, 1, 3), At(p, 2, 3), At(p, 3, 3));
-        GfxMatrix mv;
-        Multiply(s.world, s.view, mv);
-        for (int r = 0; r < 4; r++)
-            SetF(modelView + r, At(mv, 0, r), At(mv, 1, r), At(mv, 2, r), At(mv, 3, r));
+        if (cached.projection != s.projectionKey) {
+            cached.projection = s.projectionKey;
+            SetF(projection + 0, At(p, 0, 1), At(p, 1, 1), At(p, 2, 1), At(p, 3, 1));
+            SetF(projection + 1, -At(p, 0, 0), -At(p, 1, 0), -At(p, 2, 0), -At(p, 3, 0));
+            SetF(projection + 2, -At(p, 0, 2), -At(p, 1, 2), -At(p, 2, 2), -At(p, 3, 2));
+            SetF(projection + 3, At(p, 0, 3), At(p, 1, 3), At(p, 2, 3), At(p, 3, 3));
+        }
+        if (cached.world != s.worldKey || cached.view != s.viewKey) {
+            cached.world = s.worldKey;
+            cached.view = s.viewKey;
+            GfxMatrix mv;
+            Multiply(s.world, s.view, mv);
+            for (int r = 0; r < 4; r++)
+                SetF(modelView + r, At(mv, 0, r), At(mv, 1, r), At(mv, 2, r), At(mv, 3, r));
+        }
         if (minimalShader)
             return;
         for (int stage = 0; stage < 2; stage++) {
@@ -1421,6 +1458,12 @@ struct Executor : GfxExecutor {
         SetB(u3d.ambientFromVertex, s.colorVertex && s.ambientSource != GFX_MCS_MATERIAL);
         SetB(u3d.emissiveFromVertex, s.colorVertex && s.emissiveSource != GFX_MCS_MATERIAL);
 
+        // The lights are in view space.
+        if (cached.light == s.lightKey && cached.lightView == s.viewKey && cached.ambient == s.ambient)
+            return;
+        cached.light = s.lightKey;
+        cached.lightView = s.viewKey;
+        cached.ambient = s.ambient;
         float ar = ((s.ambient >> 16) & 0xff) / 255.0f, ag = ((s.ambient >> 8) & 0xff) / 255.0f,
               ab = (s.ambient & 0xff) / 255.0f;
         int count = 0;
@@ -1464,7 +1507,10 @@ struct Executor : GfxExecutor {
     void SetTLUniforms()
     {
         float h = (float)gameHeight, w = (float)gameWidth;
-        SetF(uScreen, -2.0f / h, -2.0f / w, 1.0f - 1.0f / h, 1.0f - 1.0f / w);
+        // The programs' uniforms may share registers: then the 3D draws'
+        // matrices and lights are no longer there.
+        if (SetF(uScreen, -2.0f / h, -2.0f / w, 1.0f - 1.0f / h, 1.0f - 1.0f / w))
+            cached.valid = false;
     }
 
     static GPU_Primitive_t Primitive(int d3d)
@@ -1529,12 +1575,14 @@ struct Executor : GfxExecutor {
                 parts += p;
             float draws = (float)profDraws / profFrames;
             float perDraw = draws > 0 ? 1000.0f * perFrame / draws : 0.0f;   // microseconds
-            Sys_Log("render: %.1f ms a frame: textures %.2f, copy %.2f, uniforms %.2f, state %.2f, submit %.2f, "
-                    "bottom %.2f, end %.2f, other %.2f; a draw %.1f us (uniforms %.1f, state %.1f, submit %.1f)",
+            Sys_Log("render: %.1f ms a frame: textures %.2f, flush %.2f, uniforms %.2f, state %.2f, submit %.2f, "
+                    "bottom %.2f, end %.2f, begin %.2f, clears %.2f, loop %.2f, finish %.2f, other %.2f; "
+                    "a draw %.1f us (uniforms %.1f, state %.1f, submit %.1f)",
                     profRenderTicks * perFrame, profTicks[PROF_TEXTURES] * perFrame, profTicks[PROF_COPY] * perFrame,
                     profTicks[PROF_UNIFORMS] * perFrame, profTicks[PROF_STATE] * perFrame,
                     profTicks[PROF_SUBMIT] * perFrame, profTicks[PROF_BOTTOM] * perFrame,
-                    profTicks[PROF_END] * perFrame,
+                    profTicks[PROF_END] * perFrame, profTicks[PROF_BEGIN] * perFrame, profTicks[PROF_CLEARS] * perFrame,
+                    profTicks[PROF_LOOP] * perFrame, profTicks[PROF_FINISH] * perFrame,
                     (profRenderTicks > parts ? profRenderTicks - parts : 0) * perFrame,
                     (profTicks[PROF_UNIFORMS] + profTicks[PROF_STATE] + profTicks[PROF_SUBMIT]) * perDraw,
                     profTicks[PROF_UNIFORMS] * perDraw, profTicks[PROF_STATE] * perDraw,
@@ -1646,6 +1694,7 @@ struct Executor : GfxExecutor {
         // Everything is sent again once a frame (C3D_FrameDrawOn also sets
         // the viewport).
         sent.valid = false;
+        cached.valid = false;
         sent.fogLut = false;
         sent.texBound[0] = sent.texBound[1] = false;
         drawsThisFrame = 0;
@@ -1665,34 +1714,41 @@ struct Executor : GfxExecutor {
         u64 since = ProfileTick();
         UploadDirty(textures);
         Profile(PROF_TEXTURES, since);
-        if (!inFrame)
+        if (!inFrame) {
+            u64 waitBefore = frameWait;
+            since = ProfileTick();
             BeginFrame();
-        since = ProfileTick();     // the wait for the GPU is not the renderer's
-        vertexBytes += frame.vertices.size();
-        frameVertexBytes += frame.vertices.size();
+            Profile(PROF_BEGIN, since);
+            if (profiling)     // the wait for the GPU is not the renderer's
+                profTicks[PROF_BEGIN] -= std::min(profTicks[PROF_BEGIN], frameWait - waitBefore);
+        }
+        since = ProfileTick();
+        vertexBytes += frame.vertices.size() - flushedVertexBytes;
+        frameVertexBytes += frame.vertices.size() - flushedVertexBytes;
         minimalShader = minimalSetting || s_minimalShader;
         Ctr_Breadcrumb("frame %u: %u commands, %u vertex bytes%s", frames + 1, (unsigned)frame.commands.size(),
                        (unsigned)frame.vertices.size(), present ? "" : " (flush)");
 
-        uint8_t *vertices = NULL;
-        uint16_t *indices = NULL;
-        if (!frame.vertices.empty()) {
-            vertices = Allocate(frame.vertices.size());
-            if (vertices != NULL) {
-                memcpy(vertices, frame.vertices.data(), frame.vertices.size());
-                GSPGPU_FlushDataCache(vertices, frame.vertices.size());
-            }
-        }
-        if (!frame.indices.empty()) {
-            indices = (uint16_t *)Allocate(frame.indices.size() * 2);
-            if (indices != NULL) {
-                memcpy(indices, frame.indices.data(), frame.indices.size() * 2);
-                GSPGPU_FlushDataCache(indices, frame.indices.size() * 2);
-            }
-        }
+        // The vertices and indices are recorded in linear memory, where the
+        // GPU reads them (gfx_core.cpp); what this Execute adds is flushed
+        // from the data cache. After a flush the frame goes on in the same
+        // arrays, so only what came after the last Execute.
+        uint8_t *vertices = frame.vertices.empty() ? NULL : frame.vertices.data();
+        uint16_t *indices = frame.indices.empty() ? NULL : frame.indices.data();
+        if (frame.vertices.size() > flushedVertexBytes)
+            GSPGPU_FlushDataCache(vertices + flushedVertexBytes, frame.vertices.size() - flushedVertexBytes);
+        if (frame.indices.size() > flushedIndices)
+            GSPGPU_FlushDataCache(indices + flushedIndices, (frame.indices.size() - flushedIndices) * 2);
+        flushedVertexBytes = frame.vertices.size();
+        flushedIndices = frame.indices.size();
         Profile(PROF_COPY, since);
 
         bool skipping = false;      // drawing into a texture, which is not done
+        // The loop's own time: what the parts timed inside it do not take.
+        u64 loopStart = ProfileTick(), partsBefore = 0;
+        if (profiling)
+            for (u64 p : profTicks)
+                partsBefore += p;
         for (const GfxCommand &c : frame.commands) {
             if (c.type == GFX_CMD_TARGET) {
                 skipping = c.target != NULL;
@@ -1703,7 +1759,10 @@ struct Executor : GfxExecutor {
             if (!CommandRoom())
                 break;
             if (c.type == GFX_CMD_CLEAR) {
+                u64 clearStart = ProfileTick();
                 Clear(c, stretched);
+                if (profiling)
+                    profTicks[PROF_CLEARS] += svcGetSystemTick() - clearStart;
                 last.clears++;
                 continue;
             }
@@ -1721,6 +1780,13 @@ struct Executor : GfxExecutor {
             DrawOne(c.transformed, c.primitive, frame.states[c.state], vertices + c.firstVertexByte, c.vertexCount,
                     c.firstIndex != ~0u ? indices + c.firstIndex : NULL, c.indexCount, stretched);
         }
+        if (profiling) {
+            u64 partsAfter = 0;
+            for (u64 p : profTicks)
+                partsAfter += p;
+            u64 loop = svcGetSystemTick() - loopStart;
+            profTicks[PROF_LOOP] += loop > partsAfter - partsBefore ? loop - (partsAfter - partsBefore) : 0;
+        }
         // The bottom screen's draws count in the per-draw parts, not here.
         u64 drawParts = profTicks[PROF_UNIFORMS] + profTicks[PROF_STATE] + profTicks[PROF_SUBMIT];
         since = ProfileTick();
@@ -1736,12 +1802,14 @@ struct Executor : GfxExecutor {
             return;
         }
         Ctr_Breadcrumb("frame %u: ending", frames + 1);
+        flushedVertexBytes = flushedIndices = 0;    // the next frame's arrays
         // Everything the GPU reads is flushed where it is written (vertices,
         // indices, textures): without the flag, citro3d would flush the
         // whole linear heap from the data cache every frame.
         since = ProfileTick();
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
         Profile(PROF_END, since);
+        u64 finishStart = since;
         bool profiled = profiling;
         if (profiled) {
             profFrames++;
@@ -1818,8 +1886,10 @@ struct Executor : GfxExecutor {
         executeEnd = svcGetSystemTick();
         executeTicks += executeEnd - executeStart;
         frameExecute += executeEnd - executeStart;
-        if (profiled)   // the frame's renderer time, as in the "time:" line
+        if (profiled) { // the frame's renderer time, as in the "time:" line
             profRenderTicks += frameExecute > frameWait ? frameExecute - frameWait : 0;
+            profTicks[PROF_FINISH] += executeEnd - finishStart;
+        }
         RecordFrame(interval);
         // No reads of the screen (the sun's visibility test): it reads as
         // covered, so there is no lens flare.

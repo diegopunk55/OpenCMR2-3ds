@@ -7,6 +7,9 @@
 #include "Graphics.h"
 #include "InstallInfo.h"
 #include "Sprite.h"
+#include "port/gfx.h"
+
+#include <math.h>
 
 FontSlot *g_fonts;
 unsigned int g_fontCount;
@@ -288,6 +291,27 @@ void Font_DrawChar(BYTE ch, short x, short y)
     Sprite_Queue((SpriteRect *)pGlyph, (SpriteRect *)g_fontCharRect, pTexture, g_fontBlendMode, 0, centre, NULL, (BYTE *)g_fontColour, 8);
 }
 
+// PORT: a glyph drawn larger (Gfx_GetTextScale), its position scaled about
+// the text's anchor x (where it is aligned) and its line's middle, so that
+// left, centred and right-aligned text stay in place.
+static void Font_DrawCharScaled(BYTE ch, short x, short y, float scale, short anchorX, int lineHeight)
+{
+    FontSlot *pFont = g_pCurrentFont;
+    FontGlyph *pGlyph = &pFont->pGlyphs[pFont->pCharMap[ch & 0xff]];
+    float middle = y + lineHeight * 0.5f;
+    short rect[4];
+    int centre[3];
+    rect[0] = (short)lroundf(anchorX + (x - anchorX) * scale);
+    rect[1] = (short)lroundf(middle + (y - middle) * scale);
+    rect[2] = (short)lroundf(pGlyph->width * scale);
+    rect[3] = (short)lroundf(pGlyph->height * scale);
+    centre[0] = rect[2] / 2 + rect[0];
+    centre[1] = rect[3] / 2 + rect[1];
+    centre[2] = 0;
+    Sprite_Queue((SpriteRect *)pGlyph, (SpriteRect *)rect, pFont->pTexture, g_fontBlendMode, 0, centre, NULL,
+                 (BYTE *)g_fontColour, 8);
+}
+
 // Draws text at (x, y). flags: 2 = centre, 4 = right-align (both per line),
 // 0x10 = y is the vertical middle of the first line, 0x20 = y is its bottom.
 // match 26%: below the 90% bar; kept as FUNCTION on purpose so reccmp measures it (see CONVENCIONES)
@@ -322,6 +346,7 @@ void Font_DrawText(BYTE index, char *text, short x, short y, int *pColour, unsig
         if (flags & FONT_ORIGIN_BOTTOM)
             y = (unsigned short)((short)y - (short)pFont->pHeader->lineHeight);
         Font_Select(index, pColour);
+        float scale = Gfx_GetTextScale(pFont->pHeader->lineHeight); // PORT
         for (i = 0; i < length; i++) {
             if (text[i] == ' ') {
                 penX += (short)pFont->pHeader->spaceWidth;
@@ -348,7 +373,10 @@ void Font_DrawText(BYTE index, char *text, short x, short y, int *pColour, unsig
                             }
                         }
                     }
-                    Font_DrawChar(text[i], (short)penX, (short)y);
+                    if (scale != 1.0f) // PORT
+                        Font_DrawCharScaled(text[i], (short)penX, (short)y, scale, x, pFont->pHeader->lineHeight);
+                    else
+                        Font_DrawChar(text[i], (short)penX, (short)y);
                     penX += (short)(pGlyph->width + advance);
                 }
             }

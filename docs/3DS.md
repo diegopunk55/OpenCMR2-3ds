@@ -37,7 +37,8 @@ of the original 4:3 and widens the horizontal one, so the wider screen shows
 more of the stage instead of stretching it; the menus and the HUD keep their
 places as fractions of the screen. The menus are drawn at the full 800x480
 and halved smoothly by the display transfer, so their text stays readable;
-the fonts are never shrunk. With `widescreen = 0` the game keeps the
+the fonts are never shrunk. The menus' small fonts are also drawn 30% larger
+(`text_scale`), each line kept where it is aligned. With `widescreen = 0` the game keeps the
 original 640x480, 4:3 in the middle of the screen (or stretched with
 `stretch = 1`).
 
@@ -138,6 +139,8 @@ addition to the [general settings](../README.md#configuration):
 | `texture_max` | `128` | Largest texture side on a stage, 8 to 1024. Higher is sharper and needs more memory |
 | `texture_max_menu` | `256` | The same for textures loaded in the menus |
 | `menu_supersample` | `1` | `1` draws the menus at 640x480 and halves them (sharper text); `0` draws them at half size |
+| `text_scale` | `130` | Size of the menus' small text, in percent of the original (100 to 200); `100` keeps it as on the PC |
+| `text_scale_below` | `24` | Fonts with lines shorter than this many pixels count as small (the 12 and 15 point ones) |
 | `map` | `1` | `1` shows the stage map and the HUD on the bottom screen while driving; `0` keeps the log there and the whole HUD on top |
 | `movies` | `0` | `1` plays the Bink videos |
 | `widescreen` | `1` | The game at 800x480, filling the top screen with a wider view; `0`: the original 640x480, 4:3 |
@@ -171,16 +174,20 @@ worst: frame 52.3 ms, game 38.0 ms; 120 of 120 frames over 16.7 ms, 97 over 33.3
 With `render_profile` (every 8th frame by default), each summary adds:
 
 ```
-render: 11.7 ms a frame: textures 0.10, copy 0.40, uniforms 3.10, state 2.50, submit 4.20, bottom 0.60, end 0.20, other 0.60; a draw 21.0 us (uniforms 6.6, state 5.3, submit 9.1)
+render: 11.7 ms a frame: textures 0.10, flush 0.40, uniforms 3.10, state 2.50, submit 4.20, bottom 0.60, end 0.20, begin 0.30, clears 0.05, loop 0.20, finish 0.10, other 0.05; a draw 21.0 us (uniforms 6.6, state 5.3, submit 9.1)
 render: changes a frame: 1900 uniform vectors, 600 flags, 900 combiner stages, 400 textures, 80 viewports, 3 shaders
 render: 12 textures converted while driving, 18.0 ms: 256x256/3 64x64/2
 ```
 
-(example figures). The parts: textures converted before the frame, the copy
-of its vertices and indices, and for each draw its uniforms (matrices,
-lights), fixed-function state (depth, blending, texture stages, fog) and
-submission (citro3d sends what changed and the draw). Timed frames carry
-flag 16 in the frame log.
+(example figures). The parts: textures converted before the frame, the
+flush of its vertices and indices from the data cache (they are recorded in
+linear memory, where the GPU reads them), and for each draw its uniforms
+(matrices and lights, worked out again only when they change),
+fixed-function state (depth, blending, texture stages, fog) and submission
+(citro3d sends what changed and the draw); then the bottom screen, the end of
+the frame, the start of the next one (without its wait for the GPU), the
+clears, the loop over the draws itself, and the bookkeeping after the frame.
+Timed frames carry flag 16 in the frame log.
 
 ### Frame log
 
