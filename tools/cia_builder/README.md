@@ -20,7 +20,9 @@ share it.
 1. Download **OpenCMR2-CIA-Builder** from a build of this repository
    (Actions → a green run → Artifacts) and extract it.
 2. Start the window:
-   - Windows: double-click `cia_builder_gui.py` (Python 3 from python.org).
+   - Windows: double-click `CIA Builder.bat` (needs Python 3 from
+     [python.org](https://www.python.org/downloads/); it says so if Python
+     is missing).
    - Linux: `python3 cia_builder_gui.py` (needs Tk: `pacman -S tk` on
      CachyOS/Arch, `apt install python3-tk` on Debian/Ubuntu).
 3. **Browse** to the `CMR2.exe` of your installed game. The window checks
@@ -45,6 +47,7 @@ staged, then packed), and takes a while for a few hundred MB.
 
 ```
 cia_builder.py, cia_builder_gui.py   the tool (Python 3.8+, no packages)
+CIA Builder.bat                      starts the window on Windows
 kit/opencmr2.elf                     the game, as built by CI
 kit/opencmr2.rsf, icon.icn, banner.bnr   the CIA's settings, icon and banner
 kit/bin/linux-x86_64/makerom         makerom (Project_CTR), Linux

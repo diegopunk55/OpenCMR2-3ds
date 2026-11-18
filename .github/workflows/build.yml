@@ -144,7 +144,7 @@ jobs:
           # banner, icon and settings, and makerom for Linux and Windows.
           kit=kit/OpenCMR2-CIA-Builder
           mkdir -p $kit/kit/bin/linux-x86_64 $kit/kit/bin/windows-x86_64
-          cp tools/cia_builder/*.py tools/cia_builder/README.md LICENSE $kit/
+          cp tools/cia_builder/*.py tools/cia_builder/*.bat tools/cia_builder/README.md LICENSE $kit/
           cp build/3ds/src/opencmr2.elf res/3ds/opencmr2.rsf build/3ds/src/cia/icon.icn build/3ds/src/cia/banner.bnr $kit/kit/
           cp /tmp/tools3ds/makerom $kit/kit/bin/linux-x86_64/
           cp /tmp/makerom-windows/* $kit/kit/bin/windows-x86_64/
