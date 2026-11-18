@@ -146,6 +146,7 @@ addition to the [general settings](../README.md#configuration):
 | `console` | `1` | `0` stops writing the log on the bottom screen |
 | `allow_low_memory` | `0` | `1` starts the game with less than 124 MB (or on an Old 3DS), for tests: stages may run out of memory |
 | `stats_interval` | `120` | Frames between the log's summaries (30 to 3600) |
+| `render_profile` | `8` | Every Nth frame, time the renderer's parts for the log's `render:` lines (`0`: off) |
 | `frame_log` | `1` | `1` keeps every frame of a stage in memory and writes it to `frames-*.csv` when the stage ends; `0` turns it off |
 | `debug_lighting`, `debug_fog`, `debug_mipmaps` | `1` | `0` draws without lighting, fog or mipmaps, to find a feature the GPU does not take |
 | `debug_shader` | `0` | `1` draws 3D with the minimal vertex shader (`fixedmin.v.pica`: no lighting or texture matrices) |
@@ -164,6 +165,22 @@ gfx: 24.0 fps, up to 3006 draws and 30% of the command buffer a frame, 0 frames 
 time: a frame 30.1 ms game, 9.2 ms renderer, 0.4 ms waiting for the GPU or the refresh (GPU 12.0 ms); 410 KB of vertices
 worst: frame 52.3 ms, game 38.0 ms; 120 of 120 frames over 16.7 ms, 97 over 33.3 ms
 ```
+
+### The renderer's parts
+
+With `render_profile` (every 8th frame by default), each summary adds:
+
+```
+render: 11.7 ms a frame: textures 0.10, copy 0.40, uniforms 3.10, state 2.50, submit 4.20, bottom 0.60, end 0.20, other 0.60; a draw 21.0 us (uniforms 6.6, state 5.3, submit 9.1)
+render: changes a frame: 1900 uniform vectors, 600 flags, 900 combiner stages, 400 textures, 80 viewports, 3 shaders
+render: 12 textures converted while driving, 18.0 ms: 256x256/3 64x64/2
+```
+
+(example figures). The parts: textures converted before the frame, the copy
+of its vertices and indices, and for each draw its uniforms (matrices,
+lights), fixed-function state (depth, blending, texture stages, fog) and
+submission (citro3d sends what changed and the draw). Timed frames carry
+flag 16 in the frame log.
 
 ### Frame log
 

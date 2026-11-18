@@ -327,6 +327,35 @@ struct Executor : GfxExecutor {
     u64 lastFrameEnd = 0;
     unsigned frames = 0;
     unsigned converted = 0;     // textures since the last frame
+
+    // [3ds] render_profile = N: every Nth frame, the renderer's parts are
+    // timed (each timing reads the system tick, about a microsecond, so not
+    // every frame); 0 turns it off. The log's "render:" lines give the
+    // averages, and on every frame the state changes that reach citro3d.
+    enum ProfilePart { PROF_TEXTURES, PROF_COPY, PROF_UNIFORMS, PROF_STATE, PROF_SUBMIT, PROF_BOTTOM, PROF_END,
+                       PROF_PARTS };
+    unsigned profileEvery = 8;
+    bool profiling = false;             // this frame is timed
+    u64 profTicks[PROF_PARTS] = {};
+    u64 profRenderTicks = 0;            // the timed frames' whole renderer time
+    unsigned profFrames = 0, profDraws = 0;
+    struct Changes {
+        unsigned uniforms = 0, bools = 0, texEnvs = 0, textures = 0, viewports = 0, programs = 0;
+    } changes;
+    // Textures converted while driving, by size and format, for the log.
+    unsigned driveConversions = 0;
+    u64 driveConvertTicks = 0;
+    char convertedKinds[96] = "";
+
+    u64 ProfileTick() const { return profiling ? svcGetSystemTick() : 0; }
+    void Profile(ProfilePart part, u64 &since)
+    {
+        if (!profiling)
+            return;
+        u64 now = svcGetSystemTick();
+        profTicks[part] += now - since;
+        since = now;
+    }
     u64 convertMs = 0;
     std::vector<C3D_Tex> retiredTextures;
 
@@ -448,6 +477,7 @@ struct Executor : GfxExecutor {
     void DrawOne(bool transformed, int primitive, const GfxDrawState &s, uint8_t *vertices, uint32_t vertexCount,
                  uint16_t *indices, uint32_t indexCount, bool stretched)
     {
+        u64 since = ProfileTick();
         C3D_BufInfo buf;
         BufInfo_Init(&buf);
         if (transformed) {
@@ -467,11 +497,15 @@ struct Executor : GfxExecutor {
             SetGameViewport(s.viewport, stretched);
         }
         C3D_SetBufInfo(&buf);
+        Profile(PROF_UNIFORMS, since);
         SetCommonState(s, transformed, GPU_WRITE_COLOR);
+        Profile(PROF_STATE, since);
         if (indices != NULL)
             C3D_DrawElements(Primitive(primitive), (int)indexCount, C3D_UNSIGNED_SHORT, indices);
         else
             C3D_DrawArrays(Primitive(primitive), 0, (int)vertexCount);
+        Profile(PROF_SUBMIT, since);
+        profDraws += profiling;
         drawsThisFrame++;
         last.draws++;
         (transformed ? last.drawsTL : last.draws3D)++;
@@ -686,6 +720,7 @@ struct Executor : GfxExecutor {
         stretch = Platform_GetSettingInt("3ds.stretch", 0) != 0;
         vsync = Platform_GetSettingInt("3ds.vsync", 0) != 0;
         statsInterval = (unsigned)std::max(30, std::min(3600, Platform_GetSettingInt("3ds.stats_interval", 120)));
+        profileEvery = (unsigned)std::max(0, std::min(1000, Platform_GetSettingInt("3ds.render_profile", 8)));
         if (Platform_GetSettingInt("3ds.frame_log", 1)) {
             char stamp[32] = "session";
             time_t now = time(NULL);
@@ -796,13 +831,21 @@ struct Executor : GfxExecutor {
     // Converts the CPU copy of t (top level) for the GPU.
     bool Convert(GfxTexture *t)
     {
-        u64 start = osGetTime();
+        u64 start = osGetTime(), startTicks = svcGetSystemTick();
         Ctr_Breadcrumb("converting a %dx%d texture (format %d), %u since the last frame", t->width, t->height,
                        t->format, converted);
         bool done = ConvertLevels(t);
         Ctr_Breadcrumb("converted a %dx%d texture, %u since the last frame", t->width, t->height, converted + 1);
         converted++;
         convertMs += osGetTime() - start;
+        if (Ctr_IsDriving()) {
+            driveConversions++;
+            driveConvertTicks += svcGetSystemTick() - startTicks;
+            char kind[24];
+            snprintf(kind, sizeof(kind), " %dx%d/%d", t->width, t->height, t->format);
+            if (strstr(convertedKinds, kind) == NULL && strlen(convertedKinds) + strlen(kind) < sizeof(convertedKinds))
+                strcat(convertedKinds, kind);
+        }
         return done;
     }
 
@@ -981,6 +1024,7 @@ struct Executor : GfxExecutor {
         if (v.x == x && v.y == y && v.z == z && v.w == w)
             return;
         C3D_FVUnifSet(GPU_VERTEX_SHADER, id, x, y, z, w);
+        changes.uniforms++;
     }
 
     void SetB(int id, bool value)
@@ -989,7 +1033,10 @@ struct Executor : GfxExecutor {
             return;
         bool current = (C3D_BoolUnifs[GPU_VERTEX_SHADER] & BIT(id - 0x68)) != 0;
         if (current != value || !sent.valid)
+        {
             C3D_BoolUnifSet(GPU_VERTEX_SHADER, id, value);
+            changes.bools++;
+        }
     }
 
     void SetAttrInfo(C3D_AttrInfo *attr)
@@ -1017,7 +1064,10 @@ struct Executor : GfxExecutor {
     void Bind(shaderProgram_s *program)
     {
         if (bound != program) {
+        {
             C3D_BindProgram(program);
+            changes.programs++;
+        }
             bound = program;
         }
     }
@@ -1064,6 +1114,7 @@ struct Executor : GfxExecutor {
             return;
         memcpy(sent.viewport, v, sizeof(v));
         C3D_SetViewport(v[0], v[1], v[2], v[3]);
+        changes.viewports++;
         C3D_SetScissor(GPU_SCISSOR_NORMAL, v[0], v[1], v[0] + v[2], v[1] + v[3]);
     }
 
@@ -1229,6 +1280,7 @@ struct Executor : GfxExecutor {
         if (sent.valid && sent.texBound[unit] && memcmp(&sent.tex[unit], tex, sizeof(C3D_Tex)) == 0)
             return;
         C3D_TexBind(unit, tex);
+        changes.textures++;
         sent.tex[unit] = *tex;
         sent.texBound[unit] = true;
     }
@@ -1315,6 +1367,7 @@ struct Executor : GfxExecutor {
         for (int i = 0; i < 6; i++)
             if (!sent.valid || memcmp(&env[i], &sent.env[i], sizeof(C3D_TexEnv)) != 0) {
                 C3D_SetTexEnv(i, &env[i]);
+                changes.texEnvs++;
                 sent.env[i] = env[i];
             }
         SetFog(s, transformed);
@@ -1465,6 +1518,47 @@ struct Executor : GfxExecutor {
 
     // ---- frames ----
 
+    // The renderer's parts over the summary's window, per timed frame, and
+    // the state changes per frame; then the textures converted while driving.
+    void LogRenderProfile()
+    {
+        if (profFrames > 0) {
+            float perFrame = 1000.0f / SYSCLOCK_ARM11 / profFrames;
+            u64 parts = 0;
+            for (u64 p : profTicks)
+                parts += p;
+            float draws = (float)profDraws / profFrames;
+            float perDraw = draws > 0 ? 1000.0f * perFrame / draws : 0.0f;   // microseconds
+            Sys_Log("render: %.1f ms a frame: textures %.2f, copy %.2f, uniforms %.2f, state %.2f, submit %.2f, "
+                    "bottom %.2f, end %.2f, other %.2f; a draw %.1f us (uniforms %.1f, state %.1f, submit %.1f)",
+                    profRenderTicks * perFrame, profTicks[PROF_TEXTURES] * perFrame, profTicks[PROF_COPY] * perFrame,
+                    profTicks[PROF_UNIFORMS] * perFrame, profTicks[PROF_STATE] * perFrame,
+                    profTicks[PROF_SUBMIT] * perFrame, profTicks[PROF_BOTTOM] * perFrame,
+                    profTicks[PROF_END] * perFrame,
+                    (profRenderTicks > parts ? profRenderTicks - parts : 0) * perFrame,
+                    (profTicks[PROF_UNIFORMS] + profTicks[PROF_STATE] + profTicks[PROF_SUBMIT]) * perDraw,
+                    profTicks[PROF_UNIFORMS] * perDraw, profTicks[PROF_STATE] * perDraw,
+                    profTicks[PROF_SUBMIT] * perDraw);
+        }
+        if (timedFrames > 0) {
+            float n = (float)timedFrames;
+            Sys_Log("render: changes a frame: %.0f uniform vectors, %.0f flags, %.0f combiner stages, %.0f textures, "
+                    "%.0f viewports, %.0f shaders", changes.uniforms / n, changes.bools / n, changes.texEnvs / n,
+                    changes.textures / n, changes.viewports / n, changes.programs / n);
+        }
+        if (driveConversions > 0)
+            Sys_Log("render: %u textures converted while driving, %.1f ms:%s", driveConversions,
+                    driveConvertTicks * 1000.0f / SYSCLOCK_ARM11, convertedKinds);
+        for (u64 &p : profTicks)
+            p = 0;
+        profRenderTicks = 0;
+        profFrames = profDraws = 0;
+        changes = Changes();
+        driveConversions = 0;
+        driveConvertTicks = 0;
+        convertedKinds[0] = 0;
+    }
+
     static uint32_t Microseconds(u64 ticks)
     {
         return (uint32_t)std::min<u64>(ticks * 1000000ULL / SYSCLOCK_ARM11, 0xffffffffu);
@@ -1568,9 +1662,12 @@ struct Executor : GfxExecutor {
             gameTicks += executeStart - executeEnd;
             frameGame += executeStart - executeEnd;
         }
+        u64 since = ProfileTick();
         UploadDirty(textures);
+        Profile(PROF_TEXTURES, since);
         if (!inFrame)
             BeginFrame();
+        since = ProfileTick();     // the wait for the GPU is not the renderer's
         vertexBytes += frame.vertices.size();
         frameVertexBytes += frame.vertices.size();
         minimalShader = minimalSetting || s_minimalShader;
@@ -1593,6 +1690,7 @@ struct Executor : GfxExecutor {
                 GSPGPU_FlushDataCache(indices, frame.indices.size() * 2);
             }
         }
+        Profile(PROF_COPY, since);
 
         bool skipping = false;      // drawing into a texture, which is not done
         for (const GfxCommand &c : frame.commands) {
@@ -1623,7 +1721,13 @@ struct Executor : GfxExecutor {
             DrawOne(c.transformed, c.primitive, frame.states[c.state], vertices + c.firstVertexByte, c.vertexCount,
                     c.firstIndex != ~0u ? indices + c.firstIndex : NULL, c.indexCount, stretched);
         }
+        // The bottom screen's draws count in the per-draw parts, not here.
+        u64 drawParts = profTicks[PROF_UNIFORMS] + profTicks[PROF_STATE] + profTicks[PROF_SUBMIT];
+        since = ProfileTick();
         DrawBottom(frame, vertices, indices);
+        Profile(PROF_BOTTOM, since);
+        if (profiling)
+            profTicks[PROF_BOTTOM] -= profTicks[PROF_UNIFORMS] + profTicks[PROF_STATE] + profTicks[PROF_SUBMIT] - drawParts;
 
         if (!present) {
             executeEnd = svcGetSystemTick();
@@ -1635,7 +1739,15 @@ struct Executor : GfxExecutor {
         // Everything the GPU reads is flushed where it is written (vertices,
         // indices, textures): without the flag, citro3d would flush the
         // whole linear heap from the data cache every frame.
+        since = ProfileTick();
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
+        Profile(PROF_END, since);
+        bool profiled = profiling;
+        if (profiled) {
+            profFrames++;
+            frameFlags |= FrameLog::Profiled;
+        }
+        profiling = profileEvery != 0 && (frames + 2) % profileEvery == 0;   // the next frame
         inFrame = false;
         u64 previous = lastFrameEnd;
         lastFrameEnd = osGetTime();
@@ -1689,6 +1801,7 @@ struct Executor : GfxExecutor {
             Sys_Log("worst: frame %.1f ms, game %.1f ms; %u of %u frames over 16.7 ms, %u over 33.3 ms",
                     worstInterval * 1000.0f / SYSCLOCK_ARM11, worstGame * 1000.0f / SYSCLOCK_ARM11, over16,
                     timedFrames, over33);
+            LogRenderProfile();
             maxDraws = 0;
             maxCmdUsage = 0.0f;
             dropped = 0;
@@ -1705,6 +1818,8 @@ struct Executor : GfxExecutor {
         executeEnd = svcGetSystemTick();
         executeTicks += executeEnd - executeStart;
         frameExecute += executeEnd - executeStart;
+        if (profiled)   // the frame's renderer time, as in the "time:" line
+            profRenderTicks += frameExecute > frameWait ? frameExecute - frameWait : 0;
         RecordFrame(interval);
         // No reads of the screen (the sun's visibility test): it reads as
         // covered, so there is no lens flare.

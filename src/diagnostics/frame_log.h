@@ -19,6 +19,7 @@ enum Flags : uint8_t {
     TexturesConverted = 2,  // textures were converted (a load) before this frame
     CutShort = 4,           // the command buffer filled and the rest of the frame was dropped
     FileWritten = 8,        // a full buffer was written to the SD card before this frame
+    Profiled = 16,          // the renderer's parts were timed (render_profile): a little slower
 };
 
 struct Sample {
