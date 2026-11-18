@@ -9,7 +9,3 @@
 __pycache__/
 # Test packages handed out for a console.
 /*.zip
-
-# tools/3ds.sh: captures from the console and its address
-/captures/
-/tools/3ds.env
