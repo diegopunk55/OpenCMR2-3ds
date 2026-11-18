@@ -8341,8 +8341,11 @@ void Replay_EncodeCarControls(BYTE *pOut, BYTE car)
     Car *pCar = Car_Get(car);
     DeviceInfo *pDev = CInput::GetAvailableDeviceRecord((char)Car_GetDrawnFlag(pCar->index));
 
-    Replay_EncodeControlPacket((BYTE *)pCar->flag0x1d0, pOut, pDev->field_0x0 == 3, pCar->steeringInputMode,
-                 pCar->analogThrottle, pCar->analogBrake);
+    // PORT: a car steered by a handheld's stick (keyboard device, analog
+    // steering mode) records the mode too, or its replay steers fully.
+    Replay_EncodeControlPacket((BYTE *)pCar->flag0x1d0, pOut,
+                 pDev->field_0x0 == 3 || (pDev->field_0x0 != 2 && pCar->steeringInputMode != 0),
+                 pCar->steeringInputMode, pCar->analogThrottle, pCar->analogBrake);
 }
 
 int Race_IsMultiplayerRecordMode10(void);
@@ -10880,6 +10883,10 @@ int Replay_InitCarStreamState(ReplayStream *p, int unused, BYTE car)
     p->steeringModeOption = 0;
     if (car < 2)
         p->steeringModeOption = CInput::GetControllerField124(car);
+    // PORT: the handheld stick's steering is mode 1, which the replay
+    // decodes from a non-zero option (Replay_DecodeInputPacket).
+    if (car == 0 && Sys_HasAnalogSteering())
+        p->steeringModeOption = 1;
     p->car = car;
     p->recording = 1;
     p->laneCount = 0;
@@ -12552,6 +12559,14 @@ void StageObject_UpdatePlayerControlIndicators(int player, int device)
                 g_controlCar->flag0x1d0[0] = 0x3f;
             else if ((pDev->field_0x4 & g_carButtonMasks[1]) != 0)
                 g_controlCar->flag0x1d0[1] = 0x3f;
+            // PORT: a handheld's stick steers in proportion, as a joystick's
+            // axis does above (mode 1: the wheels ease to the stick's angle).
+            int steer;
+            if (Sys_GetAnalogSteering(&steer)) {
+                g_controlCar->steeringInputMode = 1;
+                g_controlCar->flag0x1d0[0] = steer < 0 ? (char)-steer : 0;
+                g_controlCar->flag0x1d0[1] = steer > 0 ? (char)steer : 0;
+            }
         }
         if ((pDev->field_0x4 & g_carButtonMasks[4]) != 0)
             g_controlCar->handbrake = 1;

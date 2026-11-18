@@ -532,11 +532,11 @@ bool Gfx_IsRaceMode(void) { return s_raceMode; }
 extern "C" float Gfx_GetTextScale(int lineHeight)
 {
 #ifdef __3DS__
-    // [3ds] text_scale (100..200, default 130) for fonts whose lines are
+    // [3ds] text_scale (100..200, default 120) for fonts whose lines are
     // shorter than [3ds] text_scale_below pixels (default 24: the menus'
     // 12 and 15 point fonts, not the big titles).
     static const float scale =
-        std::max(100, std::min(200, Platform_GetSettingInt("3ds.text_scale", 130))) / 100.0f;
+        std::max(100, std::min(200, Platform_GetSettingInt("3ds.text_scale", 120))) / 100.0f;
     static const int below = Platform_GetSettingInt("3ds.text_scale_below", 24);
     if (!s_raceMode && lineHeight > 0 && lineHeight < below)
         return scale;

@@ -1048,6 +1048,25 @@ extern "C" BOOL Sys_TakeQuickReverse(void)
 #endif
 }
 
+extern "C" BOOL Sys_GetAnalogSteering(int *amount)
+{
+#ifdef __3DS__
+    return Ctr_GetAnalogSteering(amount) ? TRUE : FALSE;
+#else
+    (void)amount;
+    return FALSE;
+#endif
+}
+
+extern "C" BOOL Sys_HasAnalogSteering(void)
+{
+#ifdef __3DS__
+    return Ctr_HasAnalogSteering() ? TRUE : FALSE;
+#else
+    return FALSE;
+#endif
+}
+
 extern "C" void Sys_GetDesktopSize(int *width, int *height)
 {
 #ifdef __3DS__

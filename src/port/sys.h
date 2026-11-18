@@ -61,6 +61,12 @@ void Sys_GetDesktopSize(int *width, int *height);
 /* A one-press shift straight into reverse (and back to first) was asked for
    since the last call: the 3DS's X on a stage. Always FALSE elsewhere. */
 BOOL Sys_TakeQuickReverse(void);
+/* Analog steering from a handheld's stick (the 3DS's Circle Pad) on a stage:
+   TRUE with *amount from -63 (full left) to 63 (full right) while it steers,
+   FALSE when the keys steer (always elsewhere). */
+BOOL Sys_GetAnalogSteering(int *amount);
+/* Whether such steering is on: replays then record it as analog. */
+BOOL Sys_HasAnalogSteering(void);
 
 /* ---- message boxes ---- */
 

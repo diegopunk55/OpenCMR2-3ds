@@ -37,7 +37,7 @@ of the original 4:3 and widens the horizontal one, so the wider screen shows
 more of the stage instead of stretching it; the menus and the HUD keep their
 places as fractions of the screen. The menus are drawn at the full 800x480
 and halved smoothly by the display transfer, so their text stays readable;
-the fonts are never shrunk. The menus' small fonts are also drawn 30% larger
+the fonts are never shrunk. The menus' small fonts are also drawn 20% larger
 (`text_scale`), each line kept where it is aligned. With `widescreen = 0` the game keeps the
 original 640x480, 4:3 in the middle of the screen (or stretched with
 `stretch = 1`).
@@ -112,7 +112,7 @@ shows the keyboard. In menus and on a stage they mean different things:
 
 | Button | Menus | Stage |
 | --- | --- | --- |
-| Circle Pad | Move | Steer (only) |
+| Circle Pad | Move | Steer (only), in proportion to how far it is pushed |
 | D-Pad | Move | Steer; up and down also accelerate and brake |
 | R | | Accelerate |
 | L | | Brake (held when stopped: reverse, with the automatic gearbox) |
@@ -139,7 +139,11 @@ addition to the [general settings](../README.md#configuration):
 | `texture_max` | `128` | Largest texture side on a stage, 8 to 1024. Higher is sharper and needs more memory |
 | `texture_max_menu` | `256` | The same for textures loaded in the menus |
 | `menu_supersample` | `1` | `1` draws the menus at 640x480 and halves them (sharper text); `0` draws them at half size |
-| `text_scale` | `130` | Size of the menus' small text, in percent of the original (100 to 200); `100` keeps it as on the PC |
+| `text_scale` | `120` | Size of the menus' small text, in percent of the original (100 to 200); `100` keeps it as on the PC. Above 120 some screens' lines overlap |
+| `analog_steering` | `1` | On a stage the Circle Pad steers in proportion to how far it is pushed (the D-Pad still steers fully); `0`: the Circle Pad acts as the arrow keys |
+| `steering_deadzone` | `12` | Circle Pad travel (of about 156) that does not steer |
+| `steering_full` | `145` | Circle Pad travel for full lock |
+| `steering_curve` | `100` | `100`: steering follows the Circle Pad linearly; up to `300` turns less near the middle, for finer corrections |
 | `text_scale_below` | `24` | Fonts with lines shorter than this many pixels count as small (the 12 and 15 point ones) |
 | `map` | `1` | `1` shows the stage map and the HUD on the bottom screen while driving; `0` keeps the log there and the whole HUD on top |
 | `movies` | `0` | `1` plays the Bink videos |

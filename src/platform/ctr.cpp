@@ -10,11 +10,13 @@
 #include <3ds.h>
 
 #include <malloc.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <deque>
 #include <functional>
 #include <string>
@@ -101,12 +103,21 @@ void Push(int dik, bool repeat)
     s_eventCount++;
 }
 
+// [3ds] analog_steering = 1: on a stage the Circle Pad steers in proportion
+// (Ctr_GetAnalogSteering) instead of pressing the arrow keys.
+bool AnalogSteering()
+{
+    static const bool on = Platform_GetSettingInt("3ds.analog_steering", 1) != 0;
+    return on;
+}
+
 // Keys held by the buttons in the current context.
 void MapButtons(u32 held, const circlePosition &circle, bool touch, bool down[256])
 {
     memset(down, 0, 256);
-    bool left = (held & KEY_DLEFT) || circle.dx < -s_circleThreshold;
-    bool right = (held & KEY_DRIGHT) || circle.dx > s_circleThreshold;
+    bool stick = !(s_driving && AnalogSteering());
+    bool left = (held & KEY_DLEFT) || (stick && circle.dx < -s_circleThreshold);
+    bool right = (held & KEY_DRIGHT) || (stick && circle.dx > s_circleThreshold);
     bool up = (held & KEY_DUP) || circle.dy > s_circleThreshold;
     bool dn = (held & KEY_DDOWN) || circle.dy < -s_circleThreshold;
     down[DIK_LEFT] = left;
@@ -333,6 +344,33 @@ void Ctr_Breadcrumb(const char *format, ...)
 
 static bool s_romfs = false;
 static bool s_quickReverse = false;
+static circlePosition s_circle;
+static u32 s_heldKeys;
+
+bool Ctr_HasAnalogSteering(void)
+{
+    return AnalogSteering();
+}
+
+bool Ctr_GetAnalogSteering(int *amount)
+{
+    // The D-Pad's left and right keep steering fully, as keys.
+    if (!s_driving || !AnalogSteering() || (s_heldKeys & (KEY_DLEFT | KEY_DRIGHT)))
+        return false;
+    // [3ds] steering_deadzone: Circle Pad travel (of about 156) that does
+    // not steer; steering_full: travel for full lock; steering_curve: 100 is
+    // linear, more turns less near the middle (finer corrections).
+    static const int deadzone = std::max(0, std::min(100, Platform_GetSettingInt("3ds.steering_deadzone", 12)));
+    static const int full = std::max(deadzone + 10, std::min(160, Platform_GetSettingInt("3ds.steering_full", 145)));
+    static const float curve = std::max(100, std::min(300, Platform_GetSettingInt("3ds.steering_curve", 100))) / 100.0f;
+    int d = abs((int)s_circle.dx);
+    float x = d <= deadzone ? 0.0f : std::min(1.0f, (float)(d - deadzone) / (full - deadzone));
+    if (curve != 1.0f)
+        x = powf(x, curve);
+    int steer = (int)lroundf(x * 63.0f);
+    *amount = s_circle.dx < 0 ? -steer : steer;
+    return true;
+}
 
 bool Ctr_TakeQuickReverse(void)
 {
@@ -509,6 +547,8 @@ bool Ctr_Update(void)
     hidScanInput();
     circlePosition circle;
     hidCircleRead(&circle);
+    s_circle = circle;
+    s_heldKeys = hidKeysHeld();
     bool down[256];
     MapButtons(hidKeysHeld(), circle, (hidKeysHeld() & KEY_TOUCH) != 0, down);
     if (!s_driving && (hidKeysDown() & KEY_X))

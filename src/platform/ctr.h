@@ -16,6 +16,10 @@ void Ctr_Shutdown(void);
 bool Ctr_HasRomfs(void);
 // X was pressed on a stage since the last call: the gearbox's quick reverse.
 bool Ctr_TakeQuickReverse(void);
+// The Circle Pad's steering on a stage, -63 (full left) to 63: false when it
+// does not steer now (menus, the D-Pad held, [3ds] analog_steering = 0).
+bool Ctr_GetAnalogSteering(int *amount);
+bool Ctr_HasAnalogSteering(void);
 // Logs the console and the memory the game got.
 void Ctr_LogSystem(void);
 // This port needs a New 3DS in its 124 MB mode: false (after saying why on
