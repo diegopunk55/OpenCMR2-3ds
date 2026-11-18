@@ -649,6 +649,7 @@ bool Platform_Init(int argc, char **argv)
     }
     s_logFile = OpenHostFile((s_userDir + "opencmr2.log").c_str(), "w");
 #ifdef __3DS__
+    Ctr_StartWriter(s_logFile);
     Ctr_StartWatchdog();
 #endif
 
@@ -761,6 +762,7 @@ void Platform_Shutdown(void)
     Audio_Quit();
     Gfx_Shutdown();
     Sys_Log("exit");
+    Ctr_StopWriter();
     if (s_logFile != NULL) {
         fclose(s_logFile);
         s_logFile = NULL;
@@ -1114,10 +1116,17 @@ extern "C" void Sys_Log(const char *format, ...)
 #else
     fprintf(stderr, "%s\n", line);
 #endif
+#ifdef __3DS__
+    // Written by a thread of its own: an SD card write can stall the
+    // game for seconds (platform/ctr.cpp).
+    if (s_logFile != NULL)
+        Ctr_LogLine(line);
+#else
     if (s_logFile != NULL) {
         fprintf(s_logFile, "%s\n", line);
         fflush(s_logFile);
     }
+#endif
 }
 
 extern "C" void Sys_Fatal(const char *format, ...)

@@ -79,55 +79,93 @@ Written Recorder::Add(const Sample &sample, bool driving)
 
 Written Recorder::Flush()
 {
-    Written result;
     idle = 0;
     if (count == 0)
+        return {};
+    Batch batch = Take();
+    if (writeLater) {
+        Written result;
+        result.path = batch.path;
+        result.frames = batch.frames;
+        result.later = true;
+        // A batch not taken yet: this one's lines join it (one file).
+        if (!ready.text.empty()) {
+            ready.text.append(batch.text, batch.text.find('\n') + 1, std::string::npos);
+            ready.frames += batch.frames;
+        } else {
+            ready = std::move(batch);
+        }
         return result;
+    }
+    return Write(batch);
+}
+
+Batch Recorder::TakeReady()
+{
+    Batch batch = std::move(ready);
+    ready = Batch();
+    return batch;
+}
+
+// The kept frames as CSV text; they are forgotten.
+Batch Recorder::Take()
+{
+    Batch batch;
     char name[96];
     snprintf(name, sizeof(name), "frames-%s-%u.csv", stamp.c_str(), ++files);
-    result.path = directory + name;
-    result.frames = count;
-    FILE *file = fopen(result.path.c_str(), "w");
-    if (file != NULL) {
-        // Few, large writes: the SD card is slow with small ones.
-        static char buffer[64 * 1024];
-        setvbuf(file, buffer, _IOFBF, sizeof(buffer));
-        fputs("frame,time_ms,interval_ms,game_ms,render_ms,wait_ms,gpu_ms,draws,cmd_pct,vertex_kb,car_x,car_z,flags\n",
-              file);
-        // Integer formatting: printf's floating point is slow on a 3DS
-        // (8 s for a stage's 8,800 frames).
-        uint64_t timeUs = 0;
-        char line[160];
-        for (size_t i = 0; i < count; ++i) {
-            const Sample &s = samples[i];
-            timeUs += s.intervalUs;
-            char *o = line;
-            o = Unsigned(o, i);
-            *o++ = ',';
-            o = Fixed(o, (timeUs + 50) / 100, 1);
-            o = Fixed(o, (s.intervalUs + 5) / 10, 2);
-            o = Fixed(o, (s.gameUs + 5) / 10, 2);
-            o = Fixed(o, (s.renderUs + 5) / 10, 2);
-            o = Fixed(o, (s.waitUs + 5) / 10, 2);
-            o = Fixed(o, (s.gpuUs + 5) / 10, 2);
-            o = Unsigned(o, s.draws);
-            *o++ = ',';
-            o = Unsigned(o, s.cmdPercent);
-            *o++ = ',';
-            o = Unsigned(o, s.vertexKB);
-            *o++ = ',';
-            o = Signed(o, s.carX);
-            *o++ = ',';
-            o = Signed(o, s.carZ);
-            *o++ = ',';
-            o = Unsigned(o, s.flags);
-            *o++ = '\n';
-            fwrite(line, 1, (size_t)(o - line), file);
-        }
-        result.ok = !ferror(file);
-        result.ok = fclose(file) == 0 && result.ok;
+    batch.path = directory + name;
+    batch.frames = count;
+    // About 60 bytes a line.
+    batch.text.reserve(128 + count * 64);
+    batch.text += "frame,time_ms,interval_ms,game_ms,render_ms,wait_ms,gpu_ms,draws,cmd_pct,vertex_kb,car_x,car_z,flags\n";
+    // Integer formatting: printf's floating point is slow on a 3DS
+    // (8 s for a stage's 8,800 frames).
+    uint64_t timeUs = 0;
+    char line[160];
+    for (size_t i = 0; i < count; ++i) {
+        const Sample &s = samples[i];
+        timeUs += s.intervalUs;
+        char *o = line;
+        o = Unsigned(o, i);
+        *o++ = ',';
+        o = Fixed(o, (timeUs + 50) / 100, 1);
+        o = Fixed(o, (s.intervalUs + 5) / 10, 2);
+        o = Fixed(o, (s.gameUs + 5) / 10, 2);
+        o = Fixed(o, (s.renderUs + 5) / 10, 2);
+        o = Fixed(o, (s.waitUs + 5) / 10, 2);
+        o = Fixed(o, (s.gpuUs + 5) / 10, 2);
+        o = Unsigned(o, s.draws);
+        *o++ = ',';
+        o = Unsigned(o, s.cmdPercent);
+        *o++ = ',';
+        o = Unsigned(o, s.vertexKB);
+        *o++ = ',';
+        o = Signed(o, s.carX);
+        *o++ = ',';
+        o = Signed(o, s.carZ);
+        *o++ = ',';
+        o = Unsigned(o, s.flags);
+        *o++ = '\n';
+        batch.text.append(line, (size_t)(o - line));
     }
     count = 0;
+    return batch;
+}
+
+Written Write(const Batch &batch)
+{
+    Written result;
+    result.path = batch.path;
+    result.frames = batch.frames;
+    if (batch.path.empty())
+        return result;
+    FILE *file = fopen(batch.path.c_str(), "w");
+    if (file != NULL) {
+        // One large write: the SD card is slow with small ones.
+        size_t written = fwrite(batch.text.data(), 1, batch.text.size(), file);
+        result.ok = written == batch.text.size() && !ferror(file);
+        result.ok = fclose(file) == 0 && result.ok;
+    }
     return result;
 }
 

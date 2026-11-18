@@ -429,8 +429,10 @@ struct Executor : GfxExecutor {
 
     ~Executor() override
     {
-        if (frameLog)
+        if (frameLog) {
+            frameLog->SetWriteLater(false);     // on exit: now
             ReportFrameLog(frameLog->Flush(), 0);
+        }
         if (!ready)
             return;
         if (inFrame)
@@ -741,6 +743,9 @@ struct Executor : GfxExecutor {
             if (local != NULL)
                 strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", local);
             frameLog.reset(new FrameLog::Recorder(Platform_GetUserDir(), stamp));
+            // Formatted here, written by the SD card writer (platform/ctr.cpp):
+            // a stage's file took seconds to write on the results screen.
+            frameLog->SetWriteLater(true);
         }
         useLighting = Platform_GetSettingInt("3ds.debug_lighting", 1) != 0;
         useFog = Platform_GetSettingInt("3ds.debug_fog", 1) != 0;
@@ -910,8 +915,12 @@ struct Executor : GfxExecutor {
             params.format = format;
             params.type = GPU_TEX_2D;
             // Not in VRAM while the menus' big target is there: textures put
-            // in VRAM then came out corrupted on the next stage (rally).
-            params.onVram = !inFrame && big == NULL;
+            // in VRAM then came out corrupted on the next stage (rally). Nor
+            // in the menus at all: the menus' textures loaded after a stage,
+            // before the big target was made, kept it out of VRAM (small
+            // text drawn at half size until the game was restarted).
+            bool menus = supersample && !Gfx_IsRaceMode();
+            params.onVram = !inFrame && big == NULL && !menus;
             if (!C3D_TexInitWithParams(&g->tex, NULL, params)) {
                 params.onVram = false;
                 if (!C3D_TexInitWithParams(&g->tex, NULL, params)) {
@@ -1635,7 +1644,23 @@ struct Executor : GfxExecutor {
             bool failedBefore = frameLog->Failed();
             u64 start = svcGetSystemTick();
             FrameLog::Written written = frameLog->Add(s, Ctr_IsDriving());
-            if (!written.path.empty()) {
+            if (written.later) {
+                FrameLog::Batch batch = frameLog->TakeReady();
+                Sys_Log("frame log: %u frames formatted in %.0f ms, being written to %s", (unsigned)batch.frames,
+                        (svcGetSystemTick() - start) * 1000.0f / SYSCLOCK_ARM11, batch.path.c_str());
+                // std::function needs a copyable job: the batch is shared.
+                auto shared = std::make_shared<FrameLog::Batch>(std::move(batch));
+                Ctr_WriteLater([shared] {
+                    u64 begin = svcGetSystemTick();
+                    FrameLog::Written done = FrameLog::Write(*shared);
+                    if (done.ok)
+                        Sys_Log("frame log: %s written in %.1f s", done.path.c_str(),
+                                (svcGetSystemTick() - begin) / (float)SYSCLOCK_ARM11);
+                    else
+                        Sys_Log("frame log: could not write %s", done.path.c_str());
+                });
+                nextFlags |= FrameLog::FileWritten;
+            } else if (!written.path.empty()) {
                 ReportFrameLog(written, svcGetSystemTick() - start);
                 nextFlags |= FrameLog::FileWritten;
             }

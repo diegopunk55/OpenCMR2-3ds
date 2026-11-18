@@ -5,6 +5,9 @@
 #define OPENCMR2_CTR_H
 
 #include <stdint.h>
+#include <stdio.h>
+
+#include <functional>
 
 // Speeds up the CPU on a New 3DS, starts the screens and the bottom-screen log.
 bool Ctr_Init(void);
@@ -50,6 +53,16 @@ const uint32_t *Ctr_MapImage(bool *changed);
 void Ctr_MapSetFps(float fps);
 // The player's car on the stage, whole world units (false before a stage).
 bool Ctr_MapPlayerPosition(int *x, int *z);
+
+// Writing to the SD card on a thread of its own: a write can stall for
+// seconds, and the game's thread must not wait for it. The log's lines go
+// to the file given to Ctr_StartWriter; Ctr_WriteLater runs a job there
+// (a frame log). After Ctr_StopWriter, which writes what is left, both run
+// directly.
+void Ctr_StartWriter(FILE *log);
+void Ctr_StopWriter(void);
+void Ctr_LogLine(const char *line);
+void Ctr_WriteLater(std::function<void()> job);
 
 // The watchdog: when no frame has been shown for a few seconds, the log
 // gets what the game was last doing (the breadcrumb), every few seconds.

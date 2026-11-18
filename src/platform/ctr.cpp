@@ -15,6 +15,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <deque>
+#include <functional>
+#include <string>
+
 #include "platform/platform.h"
 #include "port/sys.h"
 
@@ -175,6 +179,119 @@ void Watchdog(void *)
 }
 
 } // namespace
+
+// ---- the SD card writer ----
+
+static Thread s_writer = NULL;
+static LightLock s_writerLock;          // the three below
+static LightEvent s_writerEvent;
+static bool s_writerRunning = false;
+static std::string s_logPending;        // lines not yet written
+static std::deque<std::function<void()>> s_writerJobs;
+static FILE *s_logOut = NULL;
+
+static void WriteLines(const std::string &lines)
+{
+    if (s_logOut != NULL && !lines.empty()) {
+        fwrite(lines.data(), 1, lines.size(), s_logOut);
+        fflush(s_logOut);
+    }
+}
+
+static void Writer(void *)
+{
+    std::string lines;
+    for (;;) {
+        LightEvent_Wait(&s_writerEvent);
+        for (;;) {
+            std::function<void()> job;
+            LightLock_Lock(&s_writerLock);
+            lines.swap(s_logPending);
+            if (!s_writerJobs.empty()) {
+                job = std::move(s_writerJobs.front());
+                s_writerJobs.pop_front();
+            }
+            bool running = s_writerRunning;
+            LightLock_Unlock(&s_writerLock);
+            WriteLines(lines);
+            lines.clear();
+            if (job) {
+                job();
+                continue;       // then whatever came in meanwhile
+            }
+            if (!running)
+                return;
+            break;
+        }
+    }
+}
+
+void Ctr_StartWriter(FILE *log)
+{
+    s_logOut = log;
+    LightLock_Init(&s_writerLock);
+    LightEvent_Init(&s_writerEvent, RESET_ONESHOT);
+    s_writerRunning = true;
+    // The watchdog's priority, above the game's: the thread mostly waits for
+    // the card, and it must still write when the game's thread is stuck.
+    s_writer = threadCreate(Writer, NULL, 32 * 1024, 0x28, -2, false);
+    if (s_writer == NULL)
+        s_writerRunning = false;
+}
+
+void Ctr_StopWriter(void)
+{
+    if (s_writer != NULL) {
+        LightLock_Lock(&s_writerLock);
+        s_writerRunning = false;
+        LightLock_Unlock(&s_writerLock);
+        LightEvent_Signal(&s_writerEvent);
+        threadJoin(s_writer, U64_MAX);
+        threadFree(s_writer);
+        s_writer = NULL;
+    }
+    // What came after the thread's last look.
+    std::string lines;
+    std::deque<std::function<void()>> jobs;
+    LightLock_Lock(&s_writerLock);
+    lines.swap(s_logPending);
+    jobs.swap(s_writerJobs);
+    LightLock_Unlock(&s_writerLock);
+    WriteLines(lines);
+    for (auto &job : jobs)
+        job();
+}
+
+void Ctr_LogLine(const char *line)
+{
+    if (s_writer == NULL) {
+        if (s_logOut != NULL) {
+            fprintf(s_logOut, "%s\n", line);
+            fflush(s_logOut);
+        }
+        return;
+    }
+    LightLock_Lock(&s_writerLock);
+    // A card that does not take writes: the log stops growing in memory.
+    if (s_logPending.size() < 1024 * 1024) {
+        s_logPending += line;
+        s_logPending += '\n';
+    }
+    LightLock_Unlock(&s_writerLock);
+    LightEvent_Signal(&s_writerEvent);
+}
+
+void Ctr_WriteLater(std::function<void()> job)
+{
+    if (s_writer == NULL) {
+        job();
+        return;
+    }
+    LightLock_Lock(&s_writerLock);
+    s_writerJobs.push_back(std::move(job));
+    LightLock_Unlock(&s_writerLock);
+    LightEvent_Signal(&s_writerEvent);
+}
 
 void Ctr_StartWatchdog(void)
 {

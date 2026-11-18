@@ -160,7 +160,8 @@ The log is `sd:/3ds/OpenCMR2/opencmr2.log`. Every 120 frames (`stats_interval`)
 it gets four lines: memory, drawing, where a frame's time goes on average (the
 game's own work, the renderer, waiting for the GPU or the screen refresh (at
 most 60 fps), and the GPU's drawing time), and the worst frame with how many
-frames missed 60 and 30 fps:
+frames missed 60 and 30 fps. The log is written by a thread of its own, so
+the game never waits for the SD card (a write can stall for seconds):
 
 ```
 mem: heap 7072 of 65268 KB used, linear 26040 KB, VRAM 5343 KB free
@@ -194,8 +195,10 @@ Timed frames carry flag 16 in the frame log.
 While a stage is driven, every frame's timings stay in memory (about 1.3 MB,
 allocated once) and are written to `sd:/3ds/OpenCMR2/frames-<date>-<time>-<n>.csv`
 three seconds after the stage ends (or after 36,000 frames). Nothing is written
-to the SD card while driving, so recording costs a few stores a frame. The log
-then says `frame log: N frames to ... in X s`.
+to the SD card while driving, so recording costs a few stores a frame. When the
+stage ends the frames are turned into text (`frame log: N frames formatted in
+X ms, being written to ...`) and written by the log's thread, so the results
+screen does not wait for the card (`frame log: ... written in X s`).
 
 | Column | Meaning |
 | --- | --- |
@@ -203,7 +206,7 @@ then says `frame log: N frames to ... in X s`.
 | `game_ms`, `render_ms`, `wait_ms`, `gpu_ms` | As in the `time:` line, for this frame alone |
 | `draws`, `cmd_pct`, `vertex_kb` | Draws, command buffer use and vertex data of the frame |
 | `car_x`, `car_z` | The player's car (world units), to find where on the stage a spike happens |
-| `flags` | 1: a summary was written to the log (its SD write costs time); 2: textures were converted; 4: the frame was cut short; 8: a full frame log was written before it |
+| `flags` | 1: a summary was written to the log; 2: textures were converted; 4: the frame was cut short; 8: a full frame log was written before it |
 
 Paused frames are not kept, so `time_ms` skips over pauses. A pause of more
 than three seconds counts as the end of the stage: the frames so far are

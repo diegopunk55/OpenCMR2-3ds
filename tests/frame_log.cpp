@@ -99,6 +99,25 @@ int main()
     CHECK(!written.path.empty() && !written.ok);
     CHECK(broken.Kept() == 0);
 
+    // Writing later: the stage's frames come back as a batch to write.
+    FrameLog::Recorder later(directory, "later", 100, 2);
+    later.SetWriteLater(true);
+    for (int i = 0; i < 3; ++i)
+        CHECK(later.Add(Frame(10000 + i), true).path.empty());
+    CHECK(later.Add(Frame(0), false).path.empty());
+    written = later.Add(Frame(0), false);
+    CHECK(written.later && written.frames == 3 && written.path == directory + "frames-later-1.csv");
+    CHECK(!fs::exists(written.path));
+    FrameLog::Batch batch = later.TakeReady();
+    CHECK(batch.frames == 3 && batch.path == written.path);
+    written = FrameLog::Write(batch);
+    CHECK(written.ok && written.frames == 3);
+    lines = Lines(batch.path);
+    CHECK(lines.size() == 4);
+    if (lines.size() == 4)
+        CHECK(lines[3] == "2,50.0,16.67,10.00,4.00,0.50,12.00,1500,25,300,-120,4500,1");
+    CHECK(later.TakeReady().frames == 0);
+
     std::error_code ignored;
     fs::remove_all(dir, ignored);
     if (failures == 0)

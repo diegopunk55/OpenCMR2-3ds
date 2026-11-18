@@ -39,7 +39,17 @@ struct Written {
     std::string path;       // empty: nothing was written
     size_t frames = 0;
     bool ok = false;
+    bool later = false;     // not written yet: TakeReady has it for the caller
 };
+
+// A CSV file ready to be written.
+struct Batch {
+    std::string path;
+    size_t frames = 0;
+    std::string text;
+};
+// Writes a batch (it may take seconds on an SD card).
+Written Write(const Batch &batch);
 
 class Recorder {
 public:
@@ -53,6 +63,11 @@ public:
     Written Add(const Sample &sample, bool driving);
     // Writes what is kept (on exit).
     Written Flush();
+    // Writing later: instead of writing them, Add and Flush keep the frames
+    // as a Batch for TakeReady (returning a Written with later set), which
+    // the caller writes where it does not hold up the frames (a thread).
+    void SetWriteLater(bool on) { writeLater = on; }
+    Batch TakeReady();
     size_t Kept() const { return count; }
     bool Failed() const { return failed; }
 
@@ -65,6 +80,9 @@ private:
     unsigned idle = 0;
     unsigned files = 0;
     bool failed = false;    // the buffer could not be allocated
+    bool writeLater = false;
+    Batch ready;
+    Batch Take();
 };
 
 } // namespace FrameLog
